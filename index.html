@@ -449,8 +449,7 @@
   .modal{position:fixed;inset:0;z-index:130;display:none;align-items:center;justify-content:center;background:rgba(4,8,16,.68);padding:16px}
   .modal.show{display:flex}
   .modal-card{background:var(--surface-bg);border:1px solid var(--line);border-radius:24px;width:min(460px,100%);max-height:calc(100vh - 32px);overflow-y:auto;padding:24px 22px;box-shadow:0 30px 70px rgba(0,0,0,.5)}
-  /* ---------- Orders, tracking & admin panel ---------- */
-  .shell-admin{background:var(--panel)}
+  /* ---------- Orders & tracking ---------- */
   .st{display:inline-flex;align-items:center;font-size:11.5px;font-weight:800;padding:4px 11px;border-radius:999px;line-height:1.7;white-space:nowrap}
   .st-pending{color:#f5c86e;background:rgba(245,200,110,.13);border:1px solid rgba(245,200,110,.4)}
   .st-approved{color:var(--blue);background:rgba(83,182,255,.13);border:1px solid rgba(83,182,255,.4)}
@@ -476,10 +475,6 @@
   .track-row input{flex:1 1 170px;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14.5px;padding:10px 12px;outline:none;min-height:44px}
   .track-row input:focus{border-color:var(--blue)}
 .msg-box{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.msg-box h4{margin:0 0 8px;font-size:13.5px}.msg-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.msg-item{background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;padding:9px 11px;font-size:13.5px;line-height:1.9}.msg-item.owner{border-color:var(--ok-border)}.msg-item b{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}.msg-item img{max-width:100%;border-radius:10px;margin-top:6px;display:block}.msg-box textarea{width:100%;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14px;padding:10px 12px;outline:none;resize:vertical}.msg-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}.msg-actions label{cursor:pointer}
-  .admin-form .field{margin-bottom:10px}
-  .admin-form label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:5px}
-  .admin-form input{width:100%;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14.5px;padding:10px 12px;outline:none}
-  .admin-form input:focus{border-color:var(--blue)}
   .inv-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
   .inv-head h3{margin:0;font-size:19px;font-weight:800}
   .inv-code{margin:14px 0 12px;padding:12px;border:1.5px dashed rgba(83,182,255,.55);border-radius:14px;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;background:rgba(83,182,255,.07)}
@@ -532,7 +527,6 @@
     <a href="#home" data-nav-link="home" class="active">خانه</a>
     <a href="#products" data-nav-link="products">محصولات</a>
     <a href="#support" data-nav-link="support">پشتیبانی</a>
-    <a href="control.html">مدیریت</a>
   </nav>
 </header>
 
@@ -596,7 +590,7 @@
         <h3>پرسش‌های پرتکرار</h3>
         <details>
           <summary>چطور سفارش ثبت کنم؟<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></summary>
-          <div class="a">محصول‌های موردنظرت را با دکمه‌ی «افزودن به سبد» انتخاب کن، تعداد هرکدام را مشخص کن، بعد در سبد خرید مشخصاتت را بنویس و سفارش را ثبت کن. سفارشت به پنل مدیریت فروشگاه می‌رود؛ بعد از تایید فروشگاه، شماره‌ی کارت برای پرداخت در بخش «پیگیری سفارش» (صفحه‌ی سبد خرید) نمایش داده می‌شود.</div>
+          <div class="a">محصول‌های موردنظرت را با دکمه‌ی «افزودن به سبد» انتخاب کن، تعداد هرکدام را مشخص کن، بعد در سبد خرید مشخصاتت را بنویس و سفارش را ثبت کن. سفارشت برای فروشگاه ثبت می‌شود؛ بعد از تایید فروشگاه، شماره‌ی کارت برای پرداخت در بخش «پیگیری سفارش» (صفحه‌ی سبد خرید) نمایش داده می‌شود.</div>
         </details>
         <details>
           <summary>قیمت محصولات چطور مشخص می‌شود؟<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></summary>
@@ -604,7 +598,7 @@
         </details>
         <details>
           <summary>پرداخت چطور انجام می‌شود؟<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></summary>
-          <div class="a">پرداخت آنلاین نداریم. سفارشت را ثبت می‌کنی؛ فروشگاه در پنل مدیریت سفارش را بررسی و تایید می‌کند و شماره‌ی کارتش را برایت می‌فرستد. مبلغ را کارت‌به‌کارت می‌کنی و بعد از تایید پرداخت از طرف فروشگاه، وضعیت سفارشت در پیگیری سفارش «پرداخت تایید شد» می‌شود.</div>
+          <div class="a">پرداخت آنلاین نداریم. سفارشت را ثبت می‌کنی؛ فروشگاه سفارش را بررسی و تایید می‌کند و شماره‌ی کارتش را برایت می‌فرستد. مبلغ را کارت‌به‌کارت می‌کنی و بعد از تایید پرداخت از طرف فروشگاه، وضعیت سفارشت در پیگیری سفارش «پرداخت تایید شد» می‌شود.</div>
         </details>
         <details>
           <summary>تحویل سفارش چطور انجام می‌شود؟<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></summary>
@@ -707,7 +701,7 @@
           </div>
           <button class="btn-primary wide" type="submit" id="coSubmit">ثبت سفارش</button>
           <button class="btn-ghost wide" type="button" id="coCopy" style="margin-top:8px">کپی متن سفارش</button>
-          <p class="form-note">بعد از ثبت، سفارشت در پنل مدیریت فروشگاه بررسی می‌شود؛ با تایید فروشگاه، شماره‌ی کارت برای پرداخت کارت‌به‌کارت در بخش «پیگیری سفارش» همین صفحه نمایش داده می‌شود و بعد از تایید پرداخت، با کد سفارش سفارشت را درب محل تحویل می‌گیری. قیمت اقلام بدون قیمت هنگام تایید سفارش اعلام می‌شود.</p>
+          <p class="form-note">بعد از ثبت، سفارشت توسط فروشگاه بررسی می‌شود؛ با تایید فروشگاه، شماره‌ی کارت برای پرداخت کارت‌به‌کارت در بخش «پیگیری سفارش» همین صفحه نمایش داده می‌شود و بعد از تایید پرداخت، با کد سفارش سفارشت را درب محل تحویل می‌گیری. قیمت اقلام بدون قیمت هنگام تایید سفارش اعلام می‌شود.</p>
           <div class="ok-msg" id="coOk">متن سفارش کپی شد؛ می‌توانی آن را در هر پیام‌رسانی برای فروشگاه بفرستی.</div>
         </form>
       </div>
@@ -718,7 +712,6 @@
   <footer>
     <span class="neon" dir="ltr">HelenShop</span>
     <p>فروشگاه محصولات محلی — لبنی و دامی</p>
-    <a href="control.html">پنل مدیریت</a>
   </footer>
 </main>
 
@@ -1377,7 +1370,7 @@
     return u.toString();
   }
 
-  /* ---------- Orders: submit -> admin approval -> card number -> payment confirmed ---------- */
+  /* ---------- Orders: submit -> shop approval -> card number -> payment confirmed ---------- */
   var orders = []; /* orders submitted in this page session, newest first */
   var shopCard = { number:"", holder:"" };
   var STATUS = {
@@ -1589,7 +1582,7 @@
         + '<span class="r-amt money">' + (it.total != null ? faPrice(it.total) + " تومان" : "—") + '</span></div>';
     });
     byId("invItems").innerHTML = html;
-    byId("invNote").textContent = "سفارشت در پنل مدیریت فروشگاه ثبت شد. بعد از تایید فروشگاه، شماره‌ی کارت در بخش «پیگیری سفارش» (صفحه‌ی سبد خرید) نمایش داده می‌شود تا کارت‌به‌کارت کنی؛ وقتی پرداختت تایید شود، وضعیت سفارش «پرداخت تایید شد» می‌شود." + (hasUnpriced ? " مبلغ نهایی اقلام بدون قیمت هنگام تایید سفارش اعلام می‌شود." : "") + " تا وقتی پرداخت انجام نشه، تأیید نهایی نمیشه و ما موظف به تأمین محصول شما نیستیم.";
+    byId("invNote").textContent = "سفارشت برای فروشگاه ثبت شد. بعد از تایید فروشگاه، شماره‌ی کارت در بخش «پیگیری سفارش» (صفحه‌ی سبد خرید) نمایش داده می‌شود تا کارت‌به‌کارت کنی؛ وقتی پرداختت تایید شود، وضعیت سفارش «پرداخت تایید شد» می‌شود." + (hasUnpriced ? " مبلغ نهایی اقلام بدون قیمت هنگام تایید سفارش اعلام می‌شود." : "") + " تا وقتی پرداخت انجام نشه، تأیید نهایی نمیشه و ما موظف به تأمین محصول شما نیستیم.";
     byId("invSlogan").textContent = o.slogan;
     byId("invOk").classList.remove("show");
     if(o.pricedTotal > 0){

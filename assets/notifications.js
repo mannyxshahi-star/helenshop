@@ -146,22 +146,41 @@
     for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
     return out;
   }
+  function sameKey(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
   function subscribePush(dataLayer, input) {
     var config = root.HELENSHOP_CONFIG || {};
     var vapid = config.VAPID_PUBLIC_KEY || "";
     if (!vapid || !dataLayer || !dataLayer.savePushSubscription) return Promise.resolve({ ok: false, reason: "vapid-not-configured" });
+    if (permission() !== "granted") return Promise.resolve({ ok: false, reason: "permission-not-granted" });
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return Promise.resolve({ ok: false, reason: "push-unsupported" });
+    var wantedKey = urlBase64ToUint8Array(vapid);
     return register().then(function (reg) {
       if (!reg || !reg.pushManager) return { ok: false, reason: "push-unsupported" };
       return reg.pushManager.getSubscription().then(function (existing) {
+        if (existing && existing.options && existing.options.applicationServerKey) {
+          var currentKey = new Uint8Array(existing.options.applicationServerKey);
+          if (!sameKey(currentKey, wantedKey)) {
+            return existing.unsubscribe().then(function () {
+              return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wantedKey });
+            });
+          }
+        }
         return existing || reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapid)
+          applicationServerKey: wantedKey
         });
       }).then(function (sub) {
         return dataLayer.savePushSubscription(Object.assign({}, input || {}, { subscription: sub.toJSON() }));
       }).then(function () { return { ok: true }; });
     }).catch(function () { return { ok: false, reason: "subscribe-failed" }; });
+  }
+  function refreshSubscription(dataLayer, input) {
+    if (permission() !== "granted") return Promise.resolve({ ok: false, reason: "permission-not-granted" });
+    return subscribePush(dataLayer, input);
   }
   function requestPermission(dataLayer, input) {
     unlockBell();
@@ -182,6 +201,7 @@
     register: register,
     requestPermission: requestPermission,
     subscribePush: subscribePush,
+    refreshSubscription: refreshSubscription,
     show: show,
     playBell: playBell,
     unlockBell: unlockBell,

@@ -34,6 +34,15 @@ self.addEventListener("push", (event) => {
   }));
 });
 
+self.addEventListener("pushsubscriptionchange", (event) => {
+  const oldSub = event.oldSubscription;
+  const key = oldSub && oldSub.options ? oldSub.options.applicationServerKey : null;
+  if (!key || !self.registration.pushManager) return;
+  event.waitUntil(
+    self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }).catch(() => undefined)
+  );
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || self.registration.scope;
@@ -42,6 +51,9 @@ self.addEventListener("notificationclick", (event) => {
     for (const client of windows) {
       if ("focus" in client) {
         if (client.url === url) return client.focus();
+        if ("navigate" in client) {
+          try { await client.navigate(url); return client.focus(); } catch (e) { /* fall through */ }
+        }
       }
     }
     if (self.clients.openWindow) return self.clients.openWindow(url);

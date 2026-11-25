@@ -102,10 +102,10 @@ function notificationFor(payload: WebhookPayload) {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-  if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey) {
+  if (!supabaseUrl || !serviceRoleKey || !vapidPublicKey || !vapidPrivateKey || !webhookSecret) {
     return json({ ok: false, error: "push_not_configured" }, 500);
   }
-  if (webhookSecret && req.headers.get("x-push-webhook-secret") !== webhookSecret) {
+  if (req.headers.get("x-push-webhook-secret") !== webhookSecret) {
     return json({ ok: false, error: "unauthorized" }, 401);
   }
 
@@ -133,6 +133,7 @@ Deno.serve(async (req) => {
         await webpush.sendNotification(
           { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
           JSON.stringify({ title: note.title, body: note.body, tag: note.tag, url: note.url }),
+          { TTL: 86400, urgency: "high" },
         );
         sent += 1;
       } catch (err) {

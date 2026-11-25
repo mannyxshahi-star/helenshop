@@ -5,6 +5,9 @@
 window.HELENSHOP_CONFIG = {
   SUPABASE_URL: "https://yhzssjmthvvqtorvuzwi.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloenNzam10aHZ2cXRvcnZ1endpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2Mjc1MjEsImV4cCI6MjExMTIwMzUyMX0.zUu7nDPfSzetWPgQEVvUNNI9hNduP2_2NEQMoxfV2g8",
+  // Web Push public key (safe to publish). Set after generating VAPID keys;
+  // the private key belongs only in Supabase Edge Function secrets.
+  VAPID_PUBLIC_KEY: "",
   // Demo mode is never enabled by this file. Local tests may add ?demo=1 to the URL.
   DEMO_MODE: false
 };

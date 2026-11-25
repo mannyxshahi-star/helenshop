@@ -72,6 +72,7 @@ declare global {
     HelenNotify?: {
       permission: () => string;
       requestPermission: (dataLayer: unknown, input: unknown) => Promise<{ permission: string; push: { ok: boolean; reason?: string } }>;
+      refreshSubscription?: (dataLayer: unknown, input: unknown) => Promise<{ ok: boolean; reason?: string }>;
       show: (title: string, body: string, options?: { key?: string; tag?: string; url?: string }) => Promise<boolean>;
       playBell?: () => boolean;
     };
@@ -1080,6 +1081,11 @@ function OrdersPanel({ shop, onPatch, onDelete, onRefresh, busy }: { shop: ShopD
     setNotifyPerm(result?.permission || window.HelenNotify?.permission() || "unsupported");
     window.HelenNotify?.playBell?.();
   };
+  useEffect(() => {
+    if (notifyPerm === "granted") {
+      window.HelenNotify?.refreshSubscription?.(data, { role: "owner" })?.catch(() => undefined);
+    }
+  }, [notifyPerm]);
   const sendBroadcast = async () => {
     const title = broadcastTitle.trim();
     const body = broadcastBody.trim();

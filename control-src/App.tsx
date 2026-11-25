@@ -39,9 +39,10 @@ type Order = {
   final_amount_toman: number | null;
   card_number: string | null;
   slogan: string;
+  archived_at?: string | null;
   created_at: string;
 };
-type ShopData = { products: Product[]; orders: Order[]; settings: { card_number: string } };
+type ShopData = { products: Product[]; orders: Order[]; messages: OrderMessage[]; settings: { card_number: string } };
 type OrderMessage = { id: string; order_id: string; order_code: string; sender: string; body: string; photo_data: string | null; created_at: string };
 
 declare global {
@@ -61,9 +62,18 @@ declare global {
         saveSettings: (s: { card_number: string }) => Promise<{ card_number: string }>;
         ownerValidateQr: (text: string) => Promise<Order>;
         listOrderMessages: (orderId: string) => Promise<OrderMessage[]>;
+        listRecentOrderMessages: (limit?: number) => Promise<OrderMessage[]>;
         ownerSendOrderMessage: (orderId: string, body: string, photoData?: string | null) => Promise<OrderMessage>;
+        savePushSubscription: (input: { role: "owner" | "customer"; subscription: unknown; code?: string; token?: string; phone?: string }) => Promise<unknown>;
+        deleteOrder: (id: string) => Promise<unknown>;
         productSellable: (p: Product) => boolean;
       };
+    };
+    HelenNotify?: {
+      permission: () => string;
+      requestPermission: (dataLayer: unknown, input: unknown) => Promise<{ permission: string; push: { ok: boolean; reason?: string } }>;
+      show: (title: string, body: string, options?: { key?: string; tag?: string; url?: string }) => Promise<boolean>;
+      playBell?: () => boolean;
     };
     jsQR?: (data: Uint8ClampedArray, w: number, h: number, opts?: unknown) => { data: string } | null;
   }
@@ -84,6 +94,43 @@ const STATUS_LABEL: Record<string, string> = {
 const money = (n: number | null | undefined) =>
   n === null || n === undefined ? "بدون قیمت" : `${fmt(Number(n))} تومان`;
 const faQty = (q: number) => fmt(Number(q));
+
+const CUSTOM_NOTIFICATION_PREFIX = "【اعلان】";
+function customNotificationBody(title: string, body: string) {
+  const cleanTitle = title.trim() || "پیام فروشگاه";
+  const cleanBody = body.trim();
+  return `${CUSTOM_NOTIFICATION_PREFIX}${cleanTitle}${cleanBody ? `\n${cleanBody}` : ""}`;
+}
+function parseCustomNotification(body: string | null | undefined) {
+  const text = String(body || "");
+  if (!text.startsWith(CUSTOM_NOTIFICATION_PREFIX)) return null;
+  const rest = text.slice(CUSTOM_NOTIFICATION_PREFIX.length);
+  const nl = rest.indexOf("\n");
+  return {
+    title: (nl === -1 ? rest : rest.slice(0, nl)).trim() || "پیام فروشگاه",
+    body: nl === -1 ? "" : rest.slice(nl + 1).trim(),
+  };
+}
+function isPaymentReceiptMessage(m: OrderMessage) {
+  return m.sender !== "owner" && Boolean(m.photo_data && m.photo_data.startsWith("data:image/"));
+}
+function receiptOrderIds(messages: OrderMessage[]) {
+  const ids = new Set<string>();
+  for (const m of messages || []) if (isPaymentReceiptMessage(m)) ids.add(m.order_id);
+  return ids;
+}
+function isArchived(order: Order) {
+  return Boolean(order.archived_at);
+}
+function stageRank(order: Order, hasReceipt: boolean) {
+  if (isArchived(order)) return 90;
+  if (order.status === "approved" && hasReceipt) return 0;
+  if (order.status === "pending") return 1;
+  if (order.status === "approved") return 2;
+  if (order.status === "payment_confirmed") return 3;
+  if (order.status === "rejected") return 4;
+  return 5;
+}
 
 const fmt = (n: number) => n.toLocaleString("fa-IR");
 
@@ -464,26 +511,36 @@ function OrderCard({
   order,
   cardNumber,
   onPatch,
+  onDelete,
   busy,
+  hasReceipt = false,
 }: {
   order: Order;
   cardNumber: string;
   onPatch: (id: string, patch: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
   busy: boolean;
+  hasReceipt?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [card, setCard] = useState("");
   const [messages, setMessages] = useState<OrderMessage[]>([]);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [reply, setReply] = useState("");
+  const [notifyTitle, setNotifyTitle] = useState("");
+  const [notifyBody, setNotifyBody] = useState("");
+  const [notifyStatus, setNotifyStatus] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [msgBusy, setMsgBusy] = useState(false);
   const [msgError, setMsgError] = useState<string | null>(null);
+  const shouldLoadMessages = open || hasReceipt || order.status === "approved" || order.status === "payment_confirmed";
   useEffect(() => {
-    if (!open) return;
+    if (!shouldLoadMessages) return;
     let alive = true;
-    data.listOrderMessages(order.id).then((list) => { if (alive) setMessages(list || []); }).catch(() => { if (alive) setMsgError("پیام‌ها بارگذاری نشد."); });
+    data.listOrderMessages(order.id).then((list) => { if (alive) { setMessages(list || []); setMessagesLoaded(true); } }).catch(() => { if (alive) setMsgError("پیام‌ها بارگذاری نشد."); });
     return () => { alive = false; };
-  }, [open, order.id]);
+  }, [shouldLoadMessages, order.id]);
   const sendReply = async () => {
     const body = reply.trim();
     if (!body) return;
@@ -499,16 +556,113 @@ function OrderCard({
       setMsgBusy(false);
     }
   };
-  const statusLabel = STATUS_LABEL[order.status] ?? order.status;
+  const sendCustomNotification = async () => {
+    const body = notifyBody.trim();
+    const title = notifyTitle.trim();
+    if (!title && !body) return;
+    setMsgBusy(true);
+    setMsgError(null);
+    setNotifyStatus(null);
+    try {
+      const msg = await data.ownerSendOrderMessage(order.id, customNotificationBody(title, body), null);
+      setMessages((prev) => [...prev, msg]);
+      setNotifyTitle("");
+      setNotifyBody("");
+      setNotifyStatus("اعلان برای مشتری ارسال شد.");
+    } catch {
+      setMsgError("اعلان ارسال نشد.");
+    } finally {
+      setMsgBusy(false);
+    }
+  };
+  const archived = isArchived(order);
+  const paymentPhotos = messages.filter(isPaymentReceiptMessage);
+  const latestPaymentPhoto = paymentPhotos.length > 0 ? paymentPhotos[paymentPhotos.length - 1] : null;
+  const receiptReceived = order.status === "approved" && (hasReceipt || latestPaymentPhoto !== null);
+  const statusLabel = archived
+    ? "رد شد — بایگانی"
+    : receiptReceived
+      ? "رسید پرداخت رسید"
+      : (STATUS_LABEL[order.status] ?? order.status);
   const itemsText = (order.items || [])
     .map((i) => `${i.name} — ${faQty(i.quantity)} کیلوگرم`)
     .join(" · ");
   const amountValue = order.final_amount_toman ?? order.total_toman;
+  const parsedAmount = amount.trim() === "" ? amountValue : Number(amount.replace(/[^0-9]/g, ""));
+  const effectiveAmount = parsedAmount === null || parsedAmount === undefined || !Number.isFinite(Number(parsedAmount)) ? null : Number(parsedAmount);
+  const effectiveCard = card.trim() || order.card_number || cardNumber || "";
+  const approveDisabled = busy || !effectiveCard || effectiveAmount === null || effectiveAmount <= 0;
   const detailsId = `order-${order.id}`;
-  const paymentPhotos = messages.filter(
-    (m) => m.sender !== "owner" && m.photo_data && m.photo_data.startsWith("data:image/"),
+
+  const rejectButton = (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onPatch(order.id, { status: "rejected" })}
+      className="min-h-11 shrink-0 rounded-full bg-[var(--surface)] px-3.5 py-2 text-xs font-bold text-[var(--danger)] disabled:opacity-40"
+    >
+      رد سفارش
+    </button>
   );
-  const latestPaymentPhoto = paymentPhotos.length > 0 ? paymentPhotos[paymentPhotos.length - 1] : null;
+  const confirmPaymentButton = (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onPatch(order.id, { status: "payment_confirmed" })}
+      className={BTN_PRIMARY_CLASS}
+      style={BTN_PRIMARY_STYLE}
+    >
+      پرداخت تایید شد
+    </button>
+  );
+  const archiveButton = (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onPatch(order.id, { archived_at: new Date().toISOString() })}
+      className={BTN_GHOST_CLASS}
+    >
+      بایگانی سفارش ردشده
+    </button>
+  );
+  const restoreButton = (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onPatch(order.id, { archived_at: null })}
+      className={BTN_GHOST_CLASS}
+    >
+      بازگردانی از بایگانی
+    </button>
+  );
+  const deleteControls = confirmDelete ? (
+    <div className="mt-2 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+      <p className="text-xs text-[var(--dim)]">حذف قطعی سفارش ردشده انجام شود؟ این کار برگشت ندارد.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onDelete(order.id)}
+          className="min-h-11 shrink-0 rounded-full bg-[var(--surface)] px-3.5 py-2 text-xs font-bold text-[var(--danger)] disabled:opacity-40"
+        >
+          حذف قطعی
+        </button>
+        <button type="button" disabled={busy} onClick={() => setConfirmDelete(false)} className={BTN_GHOST_CLASS}>
+          انصراف
+        </button>
+      </div>
+    </div>
+  ) : (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => setConfirmDelete(true)}
+      className="min-h-11 shrink-0 rounded-full bg-[var(--surface)] px-3.5 py-2 text-xs font-bold text-[var(--danger)] disabled:opacity-40"
+    >
+      حذف سفارش ردشده
+    </button>
+  );
+
   return (
     <article className="glass overflow-hidden rounded-3xl">
       <button
@@ -524,7 +678,7 @@ function OrderCard({
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-white"
           style={{
             background:
-              order.status === "payment_confirmed"
+              order.status === "payment_confirmed" || receiptReceived
                 ? "linear-gradient(135deg, #0d9488, #2dd4bf)"
                 : "linear-gradient(135deg, #1c39bb, #5b83f0)",
           }}
@@ -568,6 +722,107 @@ function OrderCard({
           {order.note ? (
             <p className="mt-1 text-xs text-[var(--dim)]">توضیحات مشتری: {order.note}</p>
           ) : null}
+
+          {order.status === "pending" && !archived ? (
+            <div className="mt-3 border-t border-[var(--border)] pt-3">
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={`amt-${order.id}`} className={LABEL_CLASS}>
+                    مبلغ نهایی سفارش (تومان)
+                  </label>
+                  <div className="mt-2">
+                    <input
+                      id={`amt-${order.id}`}
+                      inputMode="numeric"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder={amountValue === null || amountValue === undefined ? "" : String(amountValue)}
+                      className={FIELD_LTR_CLASS}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor={`card-${order.id}`} className={LABEL_CLASS}>
+                    شماره کارت
+                  </label>
+                  <div className="mt-2">
+                    <input
+                      id={`card-${order.id}`}
+                      dir="ltr"
+                      value={card}
+                      onChange={(e) => setCard(e.target.value)}
+                      placeholder={order.card_number || cardNumber}
+                      className={FIELD_LTR_CLASS}
+                    />
+                  </div>
+                </div>
+              </div>
+              {approveDisabled && !busy ? (
+                <p className="mt-2 text-xs text-[var(--dim)]">برای تایید، مبلغ نهایی و شماره کارت لازم است.</p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={approveDisabled}
+                  onClick={() =>
+                    onPatch(order.id, {
+                      status: "approved",
+                      final_amount_toman: effectiveAmount,
+                      card_number: effectiveCard || null,
+                    })
+                  }
+                  className={BTN_PRIMARY_CLASS}
+                  style={BTN_PRIMARY_STYLE}
+                >
+                  تایید سفارش و ارسال شماره کارت
+                </button>
+                {rejectButton}
+              </div>
+            </div>
+          ) : null}
+
+          {order.status === "approved" && !receiptReceived ? (
+            <div className="mt-3 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+              <b className="block text-xs text-[var(--dim)]">در انتظار رسید پرداخت</b>
+              <p className="mt-1 text-xs text-[var(--dim)]">وقتی رسید مشتری برسد، دکمه‌های تایید پرداخت و رد همین‌جا فعال می‌شوند.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" disabled className={BTN_GHOST_CLASS}>
+                  در انتظار رسید پرداخت
+                </button>
+                {rejectButton}
+              </div>
+            </div>
+          ) : null}
+
+          {order.status === "payment_confirmed" ? (
+            <div className="mt-3 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+              <b className="block text-xs text-[var(--dim)]">پرداخت تایید شده است</b>
+              <p className="mt-1 text-xs text-[var(--dim)]">اقدام دیگری برای این سفارش لازم نیست.</p>
+            </div>
+          ) : null}
+
+          {order.status === "rejected" && !archived ? (
+            <div className="mt-3 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+              <b className="block text-xs text-[var(--dim)]">سفارش رد شده است</b>
+              <p className="mt-1 text-xs text-[var(--dim)]">برای خلوت‌کردن صف فعال، آن را بایگانی کن؛ حذف فقط با تایید قطعی انجام می‌شود.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {archiveButton}
+                {deleteControls}
+              </div>
+            </div>
+          ) : null}
+
+          {archived ? (
+            <div className="mt-3 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+              <b className="block text-xs text-[var(--dim)]">سفارش بایگانی شده است</b>
+              <p className="mt-1 text-xs text-[var(--dim)]">این سفارش در صف فعال نیست؛ رکوردش برای سابقه نگه داشته شده است.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {restoreButton}
+                {deleteControls}
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-3 border-t border-[var(--border)] pt-3">
             <h3 className="text-xs font-black text-[var(--text)]">پیام‌ها و رسید پرداخت</h3>
             {order.status === "approved" ? (
@@ -579,19 +834,36 @@ function OrderCard({
                     {latestPaymentPhoto.body ? <p className="mt-1">{latestPaymentPhoto.body}</p> : null}
                     <img src={latestPaymentPhoto.photo_data as string} alt="اسکرین‌شات رسید پرداخت مشتری" className="mt-2 max-w-full rounded-xl" />
                   </>
+                ) : receiptReceived ? (
+                  <p className="mt-1 text-xs text-[var(--dim)]">رسید پرداخت ارسال شده است؛ در حال بارگذاری اسکرین‌شات…</p>
                 ) : (
                   <p className="mt-1 text-xs text-[var(--dim)]">هنوز اسکرین‌شات رسید پرداختی ارسال نشده است.</p>
                 )}
                 <p className="mt-2 text-xs text-[var(--dim)]">تایید پرداخت فقط بعد از دیده‌شدن واریز در حساب بانکی باشد؛ اسکرین‌شات به‌تنهایی کافی نیست.</p>
+                {receiptReceived ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {confirmPaymentButton}
+                    {rejectButton}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="mt-2 flex flex-col gap-2">
-              {messages.length === 0 ? (
+              {!messagesLoaded && messages.length === 0 ? (
+                <p className="text-xs text-[var(--dim)]">در حال بارگذاری پیام‌ها…</p>
+              ) : messages.length === 0 ? (
                 <p className="text-xs text-[var(--dim)]">هنوز پیامی نیست.</p>
-              ) : messages.map((m) => (
+              ) : messages.map((m) => {
+                const custom = m.sender === "owner" ? parseCustomNotification(m.body) : null;
+                return (
                 <div key={m.id} className="rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
-                  <b className="block text-xs text-[var(--dim)]">{m.sender === "owner" ? "فروشگاه" : "مشتری"} · {fmtTime(m.created_at)}</b>
-                  {m.body ? <p className="mt-1">{m.body}</p> : null}
+                  <b className="block text-xs text-[var(--dim)]">{custom ? "اعلان فروشگاه" : m.sender === "owner" ? "فروشگاه" : "مشتری"} · {fmtTime(m.created_at)}</b>
+                  {custom ? (
+                    <>
+                      <p className="mt-1 font-bold">{custom.title}</p>
+                      {custom.body ? <p className="mt-1">{custom.body}</p> : null}
+                    </>
+                  ) : m.body ? <p className="mt-1">{m.body}</p> : null}
                   {m.photo_data && m.photo_data.startsWith("data:image/") ? (
                     <>
                       {m.sender !== "owner" && (order.status === "approved" || order.status === "payment_confirmed") ? (
@@ -601,9 +873,11 @@ function OrderCard({
                     </>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
             {msgError ? <p className="mt-2 text-xs text-[var(--danger)]">{msgError}</p> : null}
+            {notifyStatus ? <p className="mt-2 text-xs text-[var(--accent)]">{notifyStatus}</p> : null}
             <label htmlFor={`reply-${order.id}`} className={LABEL_CLASS}>
               پاسخ به مشتری
             </label>
@@ -620,74 +894,33 @@ function OrderCard({
             <button type="button" disabled={msgBusy || reply.trim() === ""} onClick={sendReply} className={`${BTN_PRIMARY_CLASS} mt-2`} style={BTN_PRIMARY_STYLE}>
               ارسال پاسخ
             </button>
-          </div>
-          <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-            <div>
-              <label htmlFor={`amt-${order.id}`} className={LABEL_CLASS}>
-                مبلغ نهایی سفارش (تومان)
-              </label>
-              <div className="mt-2">
-                <input
-                  id={`amt-${order.id}`}
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder={amountValue === null || amountValue === undefined ? "" : String(amountValue)}
-                  className={FIELD_LTR_CLASS}
-                />
+            {!archived ? (
+              <div className="mt-3 rounded-2xl bg-[var(--surface-alt)] p-2.5">
+                <b className="block text-xs text-[var(--dim)]">اعلان سفارشی به مشتری</b>
+                <div className="mt-2">
+                  <input
+                    id={`notify-title-${order.id}`}
+                    value={notifyTitle}
+                    onChange={(e) => setNotifyTitle(e.target.value)}
+                    placeholder="عنوان اعلان"
+                    className={FIELD_LTR_CLASS}
+                  />
+                </div>
+                <div className="mt-2">
+                  <textarea
+                    id={`notify-body-${order.id}`}
+                    value={notifyBody}
+                    onChange={(e) => setNotifyBody(e.target.value)}
+                    rows={2}
+                    className={FIELD_LTR_CLASS}
+                    placeholder="متن اعلان…"
+                  />
+                </div>
+                <button type="button" disabled={msgBusy || (notifyTitle.trim() === "" && notifyBody.trim() === "")} onClick={sendCustomNotification} className={`${BTN_GHOST_CLASS} mt-2`}>
+                  ارسال اعلان به مشتری
+                </button>
               </div>
-            </div>
-            <div>
-              <label htmlFor={`card-${order.id}`} className={LABEL_CLASS}>
-                شماره کارت
-              </label>
-              <div className="mt-2">
-                <input
-                  id={`card-${order.id}`}
-                  dir="ltr"
-                  value={card}
-                  onChange={(e) => setCard(e.target.value)}
-                  placeholder={order.card_number || cardNumber}
-                  className={FIELD_LTR_CLASS}
-                />
-              </div>
-            </div>
-          </div>
-          {order.status === "approved" ? (
-            <p className="mt-3 text-xs text-[var(--dim)]">قبل از «پرداخت تایید شد»، واریز را در حساب بانکی چک کن؛ تایید بر اساس واریز بانکی است، نه فقط اسکرین‌شات.</p>
-          ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                onPatch(order.id, {
-                  status: "approved",
-                  final_amount_toman: amount.trim() === "" ? (amountValue ?? null) : Number(amount.replace(/[^0-9]/g, "")),
-                  card_number: card.trim() || order.card_number || cardNumber || null,
-                })
-              }
-              className={BTN_PRIMARY_CLASS}
-              style={BTN_PRIMARY_STYLE}
-            >
-              تایید سفارش و ارسال شماره کارت
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onPatch(order.id, { status: "payment_confirmed" })}
-              className={BTN_GHOST_CLASS}
-            >
-              پرداخت تایید شد
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onPatch(order.id, { status: "rejected" })}
-              className="min-h-11 shrink-0 rounded-full bg-[var(--surface)] px-3.5 py-2 text-xs font-bold text-[var(--danger)] disabled:opacity-40"
-            >
-              رد سفارش
-            </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -695,7 +928,7 @@ function OrderCard({
   );
 }
 
-function QrScanSection({ onPatch, busy }: { onPatch: (id: string, patch: Record<string, unknown>) => void; busy: boolean }) {
+function QrScanSection({ onPatch, onDelete, busy }: { onPatch: (id: string, patch: Record<string, unknown>) => void; onDelete: (id: string) => void; busy: boolean }) {
   const [manual, setManual] = useState("");
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [scanned, setScanned] = useState<Order | null>(null);
@@ -814,27 +1047,94 @@ function QrScanSection({ onPatch, busy }: { onPatch: (id: string, patch: Record<
       ) : null}
       {scanned ? (
         <div className="mt-2.5">
-          <OrderCard order={scanned} cardNumber="" onPatch={onPatch} busy={busy} />
+          <OrderCard order={scanned} cardNumber="" onPatch={onPatch} onDelete={onDelete} busy={busy} />
         </div>
       ) : null}
     </GlassSection>
   );
 }
 
-function OrdersPanel({ shop, onPatch, busy }: { shop: ShopData; onPatch: (id: string, patch: Record<string, unknown>) => void; busy: boolean }) {
-  const [filter, setFilter] = useState<string>("all");
+function OrdersPanel({ shop, onPatch, onDelete, onRefresh, busy }: { shop: ShopData; onPatch: (id: string, patch: Record<string, unknown>) => void; onDelete: (id: string) => void; onRefresh: () => void; busy: boolean }) {
+  const [filter, setFilter] = useState<string>("active");
+  const [notifyPerm, setNotifyPerm] = useState<string>(() => window.HelenNotify?.permission() || "unsupported");
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastBody, setBroadcastBody] = useState("");
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastStatus, setBroadcastStatus] = useState<string | null>(null);
+  const receipts = receiptOrderIds(shop.messages || []);
   const options = [
-    { value: "all", label: "همه" },
+    { value: "active", label: "فعال" },
     { value: "pending", label: "در انتظار تایید" },
     { value: "payment_confirmed", label: "پرداخت تایید شد" },
+    { value: "archived", label: "بایگانی" },
   ];
-  const list = shop.orders.filter((o) => filter === "all" || o.status === filter);
+  const list = shop.orders
+    .filter((o) => {
+      if (filter === "archived") return isArchived(o);
+      if (isArchived(o)) return false;
+      return filter === "active" || o.status === filter;
+    })
+    .sort((a, b) => stageRank(a, receipts.has(a.id)) - stageRank(b, receipts.has(b.id)) || String(b.created_at).localeCompare(String(a.created_at)));
+  const enableNotifications = async () => {
+    const result = await window.HelenNotify?.requestPermission(data, { role: "owner" });
+    setNotifyPerm(result?.permission || window.HelenNotify?.permission() || "unsupported");
+    window.HelenNotify?.playBell?.();
+  };
+  const sendBroadcast = async () => {
+    const title = broadcastTitle.trim();
+    const body = broadcastBody.trim();
+    if (!title && !body) return;
+    const targets = shop.orders.filter((o) => !isArchived(o) && o.status !== "rejected");
+    if (targets.length === 0) {
+      setBroadcastStatus("سفارش فعالی برای ارسال اعلان نیست.");
+      return;
+    }
+    setBroadcastBusy(true);
+    setBroadcastStatus(null);
+    try {
+      for (const order of targets) {
+        await data.ownerSendOrderMessage(order.id, customNotificationBody(title, body), null);
+      }
+      setBroadcastTitle("");
+      setBroadcastBody("");
+      setBroadcastStatus(`اعلان برای ${fmt(targets.length)} سفارش فعال ارسال شد.`);
+      onRefresh();
+    } catch {
+      setBroadcastStatus("ارسال اعلان همگانی انجام نشد.");
+    } finally {
+      setBroadcastBusy(false);
+    }
+  };
   return (
     <GlassSection ariaLabel="پنل سفارش‌ها">
+      <div className="mb-2.5 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+        <b className="block text-xs text-[var(--dim)]">اعلان‌های پنل</b>
+        <p className="mt-1 text-xs text-[var(--dim)]">
+          {notifyPerm === "granted" ? "اعلان سفارش، پیام و رسید پرداخت فعال است." : notifyPerm === "denied" ? "اعلان مرورگر بسته است؛ اعلان داخل پنل نشان داده می‌شود." : "برای سفارش جدید، پیام مشتری و رسید پرداخت اعلان بگیر."}
+        </p>
+        {notifyPerm !== "granted" ? (
+          <button type="button" onClick={enableNotifications} className={`${BTN_GHOST_CLASS} mt-2`}>
+            فعال کردن اعلان‌ها
+          </button>
+        ) : null}
+      </div>
+      <div className="mb-2.5 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+        <b className="block text-xs text-[var(--dim)]">اعلان سفارشی همگانی</b>
+        <div className="mt-2">
+          <input value={broadcastTitle} onChange={(e) => setBroadcastTitle(e.target.value)} placeholder="عنوان اعلان" className={FIELD_LTR_CLASS} />
+        </div>
+        <div className="mt-2">
+          <textarea value={broadcastBody} onChange={(e) => setBroadcastBody(e.target.value)} rows={2} placeholder="متن اعلان برای مشتری‌های سفارش‌های فعال…" className={FIELD_LTR_CLASS} />
+        </div>
+        <button type="button" disabled={broadcastBusy || (broadcastTitle.trim() === "" && broadcastBody.trim() === "")} onClick={sendBroadcast} className={`${BTN_PRIMARY_CLASS} mt-2`} style={BTN_PRIMARY_STYLE}>
+          ارسال اعلان همگانی
+        </button>
+        {broadcastStatus ? <p className="mt-2 text-xs text-[var(--dim)]">{broadcastStatus}</p> : null}
+      </div>
       <div
         role="radiogroup"
         aria-label="فیلتر وضعیت سفارش"
-        className="grid grid-cols-3 gap-1 rounded-full bg-[var(--surface-alt)] p-1"
+        className="grid grid-cols-4 gap-1 rounded-full bg-[var(--surface-alt)] p-1"
       >
         {options.map((o) => {
           const active = filter === o.value;
@@ -860,11 +1160,11 @@ function OrdersPanel({ shop, onPatch, busy }: { shop: ShopData; onPatch: (id: st
       ) : (
         <div className="mt-2.5 space-y-2">
           {list.map((o) => (
-            <OrderCard key={o.id} order={o} cardNumber={shop.settings.card_number} onPatch={onPatch} busy={busy} />
+            <OrderCard key={o.id} order={o} cardNumber={shop.settings.card_number} onPatch={onPatch} onDelete={onDelete} busy={busy} hasReceipt={receipts.has(o.id)} />
           ))}
         </div>
       )}
-      <QrScanSection onPatch={onPatch} busy={busy} />
+      <QrScanSection onPatch={onPatch} onDelete={onDelete} busy={busy} />
     </GlassSection>
   );
 }
@@ -1062,9 +1362,10 @@ function last7Days(orders: Order[]): DayRow[] {
   return days;
 }
 
-function StatsPanel({ shop, onPatch, busy }: { shop: ShopData; onPatch: (id: string, patch: Record<string, unknown>) => void; busy: boolean }) {
+function StatsPanel({ shop, onPatch, onDelete, busy }: { shop: ShopData; onPatch: (id: string, patch: Record<string, unknown>) => void; onDelete: (id: string) => void; busy: boolean }) {
   const [showAllLog, setShowAllLog] = useState(false);
   const orders = shop.orders;
+  const receipts = receiptOrderIds(shop.messages || []);
   const pending = orders.filter((o) => o.status === "pending").length;
   const confirmed = orders.filter((o) => o.status === "payment_confirmed").length;
   const days = last7Days(orders);
@@ -1185,7 +1486,7 @@ function StatsPanel({ shop, onPatch, busy }: { shop: ShopData; onPatch: (id: str
         ) : (
           <div className="mt-2.5 space-y-2">
             {orders.slice(0, 8).map((o) => (
-              <OrderCard key={o.id} order={o} cardNumber={shop.settings.card_number} onPatch={onPatch} busy={busy} />
+              <OrderCard key={o.id} order={o} cardNumber={shop.settings.card_number} onPatch={onPatch} onDelete={onDelete} busy={busy} hasReceipt={receipts.has(o.id)} />
             ))}
           </div>
         )}
@@ -1284,12 +1585,13 @@ export function App() {
   const shop = useQuery({
     queryKey: ["shop"],
     queryFn: async (): Promise<ShopData> => {
-      const [products, orders, settings] = await Promise.all([
+      const [products, orders, settings, messages] = await Promise.all([
         data.getProducts(),
         data.listOrders(),
         data.getSettings(),
+        data.listRecentOrderMessages(100).catch(() => [] as OrderMessage[]),
       ]);
-      return { products, orders, settings };
+      return { products, orders, settings, messages };
     },
     enabled: authed,
     refetchInterval: 20000,
@@ -1298,6 +1600,10 @@ export function App() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["shop"] });
   const patchOrder = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => data.updateOrder(id, patch),
+    onSuccess: invalidate,
+  });
+  const deleteOrder = useMutation({
+    mutationFn: (id: string) => data.deleteOrder(id),
     onSuccess: invalidate,
   });
   const saveProduct = useMutation({
@@ -1309,7 +1615,37 @@ export function App() {
     mutationFn: (card: string) => data.saveSettings({ card_number: card }),
     onSuccess: invalidate,
   });
-  const busy = patchOrder.isPending || saveProduct.isPending || saveCard.isPending;
+  const busy = patchOrder.isPending || deleteOrder.isPending || saveProduct.isPending || saveCard.isPending;
+  const notifySeenRef = useRef<{ initialized: boolean; orderIds: Set<string>; messageIds: Set<string> }>({ initialized: false, orderIds: new Set(), messageIds: new Set() });
+  useEffect(() => {
+    if (!authed || !shop.data) return;
+    const seen = notifySeenRef.current;
+    const orders = shop.data.orders || [];
+    const messages = shop.data.messages || [];
+    if (!seen.initialized) {
+      seen.orderIds = new Set(orders.map((o) => o.id));
+      seen.messageIds = new Set(messages.map((m) => m.id));
+      seen.initialized = true;
+      return;
+    }
+    for (const order of orders) {
+      if (!seen.orderIds.has(order.id)) {
+        seen.orderIds.add(order.id);
+        void window.HelenNotify?.show("سفارش جدید", `سفارش ${order.code} ثبت شد.`, { key: `owner-order-${order.id}`, tag: `owner-order-${order.id}`, url: location.href });
+      }
+    }
+    for (const m of [...messages].reverse()) {
+      if (seen.messageIds.has(m.id)) continue;
+      seen.messageIds.add(m.id);
+      if (m.sender === "owner") continue;
+      const receipt = isPaymentReceiptMessage(m);
+      void window.HelenNotify?.show(
+        receipt ? "رسید پرداخت رسید" : "پیام جدید مشتری",
+        receipt ? `رسید پرداخت سفارش ${m.order_code} ارسال شد.` : `برای سفارش ${m.order_code} پیام جدید آمد.`,
+        { key: `owner-message-${m.id}`, tag: `owner-message-${m.id}`, url: location.href },
+      );
+    }
+  }, [authed, shop.data]);
 
   const doLogin = async () => {
     setLoginError(null);
@@ -1475,7 +1811,7 @@ export function App() {
               hidden={tab !== "stats"}
               className="mt-3.5"
             >
-              <StatsPanel shop={shopData} onPatch={(id, patch) => patchOrder.mutate({ id, patch })} busy={busy} />
+              <StatsPanel shop={shopData} onPatch={(id, patch) => patchOrder.mutate({ id, patch })} onDelete={(id) => deleteOrder.mutate(id)} busy={busy} />
             </div>
             <div
               role="tabpanel"
@@ -1484,7 +1820,7 @@ export function App() {
               hidden={tab !== "orders"}
               className="mt-3.5"
             >
-              <OrdersPanel shop={shopData} onPatch={(id, patch) => patchOrder.mutate({ id, patch })} busy={busy} />
+              <OrdersPanel shop={shopData} onPatch={(id, patch) => patchOrder.mutate({ id, patch })} onDelete={(id) => deleteOrder.mutate(id)} onRefresh={invalidate} busy={busy} />
             </div>
             <div
               role="tabpanel"

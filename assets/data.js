@@ -233,6 +233,7 @@
         final_amount_toman: null,
         card_number: null,
         slogan: SLOGANS[Math.floor(Math.random() * SLOGANS.length)],
+        archived_at: null,
         created_at: nowIso(),
         updated_at: nowIso()
       };
@@ -321,6 +322,38 @@
       const s = requireSession();
       if (mode === "demo") return clone(demoMessages().filter((m) => m.order_id === orderId).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))));
       return request("/rest/v1/order_messages?order_id=eq." + encodeURIComponent(orderId) + "&select=*&order=created_at.asc", { headers: headers(s.access_token) });
+    }
+    async function listRecentOrderMessages(limit) {
+      const s = requireSession();
+      const n = Math.max(1, Math.min(200, Number(limit) || 100));
+      if (mode === "demo") return clone(demoMessages().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, n));
+      return request("/rest/v1/order_messages?select=*&order=created_at.desc&limit=" + n, { headers: headers(s.access_token) });
+    }
+    async function savePushSubscription(input) {
+      const sub = input && input.subscription;
+      if (!sub || !sub.endpoint) throw new Error("PUSH_SUBSCRIPTION_REQUIRED");
+      if (mode === "demo") return { ok: true, demo: true };
+      if (mode === "setup") throw new Error("SETUP_REQUIRED");
+      const role = input.role === "owner" ? "owner" : "customer";
+      if (role === "owner") {
+        const s = requireSession();
+        const rows = await request("/rest/v1/rpc/save_owner_push_subscription", {
+          method: "POST",
+          headers: headers(s.access_token),
+          body: JSON.stringify({ p_subscription: sub })
+        });
+        return Array.isArray(rows) ? rows[0] : rows;
+      }
+      const code = String(input.code || "").trim().toUpperCase();
+      const token = String(input.token || "");
+      const phone = normalizePhone(input.phone);
+      if (!code || (!token && !phone)) throw new Error("ORDER_ACCESS_REQUIRED");
+      const rows = await request("/rest/v1/rpc/save_customer_push_subscription", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ p_code: code, p_token: token || null, p_phone: phone || null, p_subscription: sub })
+      });
+      return Array.isArray(rows) ? rows[0] : rows;
     }
     async function ownerSendOrderMessage(orderId, body, photoData) {
       const s = requireSession();
@@ -451,6 +484,27 @@
       return Array.isArray(rows) ? rows[0] : rows;
     }
 
+    async function deleteOrder(id) {
+      const s = requireSession();
+      if (mode === "demo") {
+        const orders = demoOrders();
+        const idx = orders.findIndex((o) => o.id === id);
+        if (idx < 0) throw new Error("ORDER_NOT_FOUND");
+        if (orders[idx].status !== "rejected") throw new Error("ONLY_REJECTED_ORDERS_CAN_BE_DELETED");
+        const removed = orders.splice(idx, 1)[0];
+        demoWrite("helenshop_demo_orders", orders);
+        demoWriteMessages(demoMessages().filter((m) => m.order_id !== id));
+        return clone(removed);
+      }
+      const rows = await request("/rest/v1/orders?id=eq." + encodeURIComponent(id) + "&status=eq.rejected", {
+        method: "DELETE",
+        headers: headers(s.access_token, { Prefer: "return=representation" })
+      });
+      const deleted = Array.isArray(rows) ? rows[0] : rows;
+      if (!deleted) throw new Error("ORDER_DELETE_FAILED");
+      return deleted;
+    }
+
     async function getSettings() {
       if (mode === "demo") return demoSettings();
       if (mode === "setup") return { card_number: "" };
@@ -488,14 +542,17 @@
       getOrderMessages,
       sendOrderMessage,
       listOrderMessages,
+      listRecentOrderMessages,
       ownerSendOrderMessage,
       ownerValidateQr,
+      savePushSubscription,
       login,
       logout,
       getSession,
       listOrders,
       updateProduct,
       updateOrder,
+      deleteOrder,
       getSettings,
       saveSettings,
       productSellable

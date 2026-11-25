@@ -764,6 +764,7 @@
 
 <script src="assets/config.js"></script>
 <script src="assets/data.js"></script>
+<script src="assets/notifications.js"></script>
 <script src="assets/qrcodegen.js"></script>
 <script>
 (function(){
@@ -1308,6 +1309,46 @@
   function hsStoredOrderCodes(){ try { var v = JSON.parse(localStorage.getItem("helenshop_order_codes") || "[]"); return Array.isArray(v) ? v.filter(function(c){ return /^MS-\d{6}$/.test(c); }) : []; } catch(e){ return []; } }
   function hsRememberOrder(code){ try { if(!code) return; var codes = hsStoredOrderCodes().filter(function(c){ return c !== code; }); codes.unshift(code); localStorage.setItem("helenshop_order_codes", JSON.stringify(codes.slice(0, 10))); } catch(e){} }
   function hsStatus(s){ return s === "payment_confirmed" ? "paid" : (s || "pending"); }
+  var HS_CUSTOM_NOTIFICATION_PREFIX = "【اعلان】";
+  function hsParseCustomNotification(body){
+    var text = String(body || "");
+    if(text.indexOf(HS_CUSTOM_NOTIFICATION_PREFIX) !== 0) return null;
+    var rest = text.slice(HS_CUSTOM_NOTIFICATION_PREFIX.length);
+    var nl = rest.indexOf("\n");
+    return { title: (nl === -1 ? rest : rest.slice(0, nl)).trim() || "پیام فروشگاه", body: nl === -1 ? "" : rest.slice(nl + 1).trim() };
+  }
+  function hsClosedOrderCodes(){
+    try { var v = JSON.parse(sessionStorage.getItem("helenshop_closed_orders") || "[]"); return Array.isArray(v) ? v : []; } catch(e){ return []; }
+  }
+  function hsSetOrderClosed(code, closed){
+    try {
+      var codes = hsClosedOrderCodes().filter(function(c){ return c !== code; });
+      if(closed) codes.unshift(code);
+      sessionStorage.setItem("helenshop_closed_orders", JSON.stringify(codes.slice(0, 20)));
+    } catch(e){}
+  }
+  function hsOrderClosed(code){ return hsClosedOrderCodes().indexOf(code) !== -1; }
+  function hsNotify(title, body, key){
+    if(window.HelenNotify && window.HelenNotify.show){
+      window.HelenNotify.show(title, body, { key: key, tag: key, url: location.href });
+    } else {
+      toast(title + (body ? " — " + body : ""));
+    }
+  }
+  function hsNotifyStatusChange(code, prev, next){
+    if(!prev || prev === next) return;
+    if(next === "approved") hsNotify("سفارشت تایید شد", "سفارش " + code + " تایید شد؛ شماره کارت در صفحه سفارش است.", "customer-" + code + "-approved");
+    else if(next === "paid") hsNotify("پرداخت تایید شد", "پرداخت سفارش " + code + " تایید شد.", "customer-" + code + "-paid");
+    else if(next === "rejected") hsNotify("سفارش رد شد", "سفارش " + code + " رد شد.", "customer-" + code + "-rejected");
+  }
+  function hsEnableNotifications(code){
+    if(!window.HelenNotify || !window.HelenNotify.requestPermission){ toast("اعلان در این مرورگر پشتیبانی نمی‌شود"); return; }
+    window.HelenNotify.requestPermission(hsData, { role: "customer", code: code, token: hsToken(code) }).then(function(result){
+      if(result && result.permission === "granted") toast("اعلان‌های سفارش فعال شد");
+      else toast("اعلان داخل صفحه فعال می‌ماند");
+      renderOrders();
+    }).catch(function(){ toast("اعلان داخل صفحه فعال می‌ماند"); });
+  }
   function hsToSpaceOrder(resp, spaceItems){
     var items = spaceItems || (resp.items || []).map(function(it){
       var line = lineOf(HS_ID_REV[it.product_id] || it.product_id);
@@ -1329,7 +1370,14 @@
   }
   function hsUpsertOrder(o){
     hsRememberOrder(o.code);
-    for(var i = 0; i < orders.length; i++){ if(orders[i].code === o.code){ orders[i] = o; return; } }
+    for(var i = 0; i < orders.length; i++){
+      if(orders[i].code === o.code){
+        var prev = orders[i].status;
+        orders[i] = o;
+        hsNotifyStatusChange(o.code, prev, o.status);
+        return;
+      }
+    }
     orders.unshift(o);
   }
   function hsLoadProducts(){
@@ -1427,7 +1475,13 @@
     }).then(function(){ btn.disabled = false; });
   }
   function customerOrderHtml(o){
-    var h = '<div class="ord"><div class="ord-head"><b dir="ltr">' + o.code + '</b>' + statusChip(o) + '</div>'
+    var notifyBtn = (window.HelenNotify && window.HelenNotify.permission && window.HelenNotify.permission() !== "granted")
+      ? '<button class="btn-ghost btn-sm" type="button" data-notifyorder="' + o.code + '">فعال کردن اعلان سفارش</button>'
+      : "";
+    var closeBtn = o.status === "approved"
+      ? '<button class="btn-ghost btn-sm" type="button" data-closeorder="' + o.code + '">بستن</button>'
+      : "";
+    var h = '<div class="ord" data-ordercard="' + o.code + '"><div class="ord-head"><b dir="ltr">' + o.code + '</b>' + statusChip(o) + notifyBtn + closeBtn + '</div>'
       + '<div class="ord-items">' + orderItemsHtml(o) + '</div>';
     if(o.status === "pending"){
       h += '<p class="wait-note">سفارشت در انتظار تایید فروشگاه است؛ بعد از تایید، شماره‌ی کارت برای پرداخت همین‌جا نمایش داده می‌شود.</p>';
@@ -1464,16 +1518,26 @@
   function hsRenderMessages(code, list){
     var ord = orderByCode(code);
     var html = (list && list.length) ? list.map(function(m){
+      var custom = m.sender === "owner" ? hsParseCustomNotification(m.body) : null;
       var hasPhoto = (m.photo_data && String(m.photo_data).indexOf("data:image/") === 0);
       var photoLabel = (hasPhoto && m.sender !== "owner" && ord && (ord.status === "approved" || ord.status === "paid")) ? '<span class="lbl">اسکرین‌شات رسید پرداخت</span>' : "";
       var photo = hasPhoto ? '<img alt="عکس پیام" src="' + m.photo_data + '" />' : "";
-      return '<div class="msg-item' + (m.sender === "owner" ? " owner" : "") + '"><b>' + (m.sender === "owner" ? "فروشگاه" : "شما") + '</b>' + esc(m.body || "") + photoLabel + photo + '</div>';
+      var bodyHtml = custom ? '<b>' + esc(custom.title) + '</b>' + esc(custom.body || "") : esc(m.body || "");
+      return '<div class="msg-item' + (m.sender === "owner" ? " owner" : "") + '"><b>' + (custom ? "اعلان فروشگاه" : m.sender === "owner" ? "فروشگاه" : "شما") + '</b>' + bodyHtml + photoLabel + photo + '</div>';
     }).join("") : '<p class="wait-note">هنوز پیامی نیست.</p>';
     document.querySelectorAll('[data-msglist="' + code + '"]').forEach(function(el){ el.innerHTML = html; });
   }
+  function hsNotifyOwnerMessages(code, list){
+    (list || []).forEach(function(m){
+      if(m.sender !== "owner") return;
+      var custom = hsParseCustomNotification(m.body);
+      if(custom) hsNotify(custom.title, custom.body || ("برای سفارش " + code + " اعلان جدید آمد."), "customer-message-" + m.id);
+      else hsNotify("پاسخ فروشگاه", "فروشگاه به سفارش " + code + " پاسخ داد.", "customer-message-" + m.id);
+    });
+  }
   function hsLoadMessages(code){
     if(!hsData || !hsData.getOrderMessages) return;
-    hsData.getOrderMessages({ code: code, token: hsToken(code) }).then(function(list){ hsRenderMessages(code, list); }).catch(function(){ hsRenderMessages(code, []); });
+    hsData.getOrderMessages({ code: code, token: hsToken(code) }).then(function(list){ hsNotifyOwnerMessages(code, list); hsRenderMessages(code, list); }).catch(function(){ hsRenderMessages(code, []); });
   }
   function hsPhotoData(file){
     return new Promise(function(resolve, reject){
@@ -1530,14 +1594,32 @@
   }
   function renderOrders(){
     var mine = byId("myOrders");
-    if(mine) mine.innerHTML = orders.map(customerOrderHtml).join("");
-    orders.forEach(function(o){ hsLoadMessages(o.code); });
+    var visible = orders.filter(function(o){ return !hsOrderClosed(o.code); });
+    if(mine) mine.innerHTML = visible.map(customerOrderHtml).join("");
+    visible.forEach(function(o){ hsLoadMessages(o.code); });
+  }
+  function hsPollOrders(){
+    if(!hsData) return;
+    hsStoredOrderCodes().slice(0, 5).forEach(function(code){
+      hsData.getOrderStatus({ code: code, token: hsToken(code) }).then(function(resp){
+        if(!resp) return;
+        hsUpsertOrder(hsToSpaceOrder(resp));
+        renderOrders();
+        var box = byId("trackResult");
+        var tc = byId("trackCode");
+        if(box && tc && tc.value === code && !hsOrderClosed(code)){
+          var o = orderByCode(code);
+          if(o){ box.innerHTML = customerOrderHtml(o); hsLoadMessages(code); }
+        }
+      }).catch(function(){});
+    });
   }
   byId("trackBtn").addEventListener("click", function(){
     var raw = faDigitsToEn(byId("trackCode").value).replace(/[^0-9]/g, "");
     var box = byId("trackResult");
     if(!raw){ box.innerHTML = ""; toast("کد سفارش را وارد کن"); return; }
     var code = "MS-" + raw;
+    hsSetOrderClosed(code, false);
     if(!hsData){ toast("اتصال فروشگاه آماده نیست"); return; }
     hsData.getOrderStatus({ code: code, token: hsToken(code) }).then(function(resp){
       if(resp){
@@ -1550,6 +1632,16 @@
     }).catch(function(){ box.innerHTML = ""; toast("سفارشی با این کد پیدا نشد"); });
   });
   document.addEventListener("click", function(e){
+    var closeBtn = e.target.closest("[data-closeorder]");
+    if(closeBtn){
+      var closeCode = closeBtn.getAttribute("data-closeorder");
+      hsSetOrderClosed(closeCode, true);
+      document.querySelectorAll('[data-ordercard="' + closeCode + '"]').forEach(function(el){ el.remove(); });
+      toast("بخش سفارش بسته شد؛ پیگیری با کد سفارش همچنان در دسترس است");
+      return;
+    }
+    var notifyBtn = e.target.closest("[data-notifyorder]");
+    if(notifyBtn){ hsEnableNotifications(notifyBtn.getAttribute("data-notifyorder")); return; }
     var sm = e.target.closest("[data-sendmsg]");
     if(sm){ hsSendMessage(sm.getAttribute("data-sendmsg"), sm); return; }
     var cc = e.target.closest("[data-copycard]");
@@ -1641,6 +1733,7 @@
   renderCart();
   hsLoadProducts();
   setInterval(hsLoadProducts, 15000);
+  setInterval(hsPollOrders, 20000);
   (function(){
     var code = (hsParams.get("code") || "").toUpperCase();
     var token = hsParams.get("token") || "";

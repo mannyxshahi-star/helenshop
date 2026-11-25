@@ -1443,7 +1443,7 @@
         + (o.card.holder ? '<br/><span class="lbl">به نام:</span> ' + esc(o.card.holder) : '')
         + (o.amount != null ? '<br/><span class="lbl">مبلغ قابل پرداخت:</span> <b class="money">' + faPrice(o.amount) + ' تومان</b>' : '')
         + '<div style="margin-top:10px"><button class="btn-ghost btn-sm" type="button" data-copycard="' + o.code + '">کپی شماره کارت</button></div>'
-        + '<p class="wait-note">مبلغ را کارت‌به‌کارت کن؛ بعد از بررسی فروشگاه، وضعیت سفارشت «پرداخت تایید شد» می‌شود.</p></div>';
+        + '<p class="wait-note">شماره کارت فروشگاه فقط همین‌جا داخل سفارش تاییدشده نمایش داده می‌شود. مبلغ را کارت‌به‌کارت کن و بعد اسکرین‌شات رسید پرداخت را در چت همین سفارش بفرست. HelenShop هیچ‌وقت عکس کارت، CVV، رمز یا پرداخت خارج از صفحه سفارش نمی‌خواهد. تایید نهایی بعد از دیده‌شدن واریز در حساب فروشگاه است، نه فقط با اسکرین‌شات.</p></div>';
     } else if(o.status === "rejected"){
       h += '<p class="wait-note">این سفارش رد شده است.</p>';
     } else if(o.status === "paid"){
@@ -1453,16 +1453,28 @@
     return h + '</div>';
   }
   function hsMessageBoxHtml(o){
+    var payPrompt = "";
+    var placeholder = "اگر مشکلی در پرداخت بود همین‌جا بنویس…";
+    var photoLabel = "افزودن عکس";
+    if(o.status === "approved"){
+      payPrompt = '<p class="wait-note"><b>رسید پرداخت:</b> بعد از پرداخت، اسکرین‌شات رسید پرداخت را همین‌جا بفرست. قبل از ارسال، شماره کامل کارت، CVV2، تاریخ انقضا و اطلاعات حساس را محو کن؛ فقط مبلغ، تاریخ/ساعت، کد پیگیری و ۴ رقم آخر کارت دیده شود. عکس خود کارت را نفرست. نام صاحب کارت + ۴ رقم آخر کارت را در پیام بنویس. HelenShop هیچ‌وقت عکس کارت، CVV، رمز یا پرداخت خارج از صفحه سفارش نمی‌خواهد.</p>';
+      placeholder = "نام صاحب کارت + ۴ رقم آخر کارت را بنویس…";
+      photoLabel = "افزودن اسکرین‌شات رسید پرداخت";
+    }
     return '<div class="msg-box" data-msgbox="' + o.code + '"><h4>پیام به فروشگاه</h4>'
+      + payPrompt
       + '<div class="msg-list" data-msglist="' + o.code + '"><p class="wait-note">در حال بارگذاری پیام‌ها…</p></div>'
-      + '<textarea data-msgbody rows="2" placeholder="اگر مشکلی در پرداخت بود همین‌جا بنویس…"></textarea>'
-      + '<div class="msg-actions"><label class="btn-ghost btn-sm">افزودن عکس<input type="file" accept="image/*" data-msgphoto hidden /></label>'
+      + '<textarea data-msgbody rows="2" placeholder="' + placeholder + '"></textarea>'
+      + '<div class="msg-actions"><label class="btn-ghost btn-sm">' + photoLabel + '<input type="file" accept="image/*" data-msgphoto hidden /></label>'
       + '<button class="btn-primary btn-sm" type="button" data-sendmsg="' + o.code + '">ارسال پیام</button></div></div>';
   }
   function hsRenderMessages(code, list){
+    var ord = orderByCode(code);
     var html = (list && list.length) ? list.map(function(m){
-      var photo = (m.photo_data && String(m.photo_data).indexOf("data:image/") === 0) ? '<img alt="عکس پیام" src="' + m.photo_data + '" />' : "";
-      return '<div class="msg-item' + (m.sender === "owner" ? " owner" : "") + '"><b>' + (m.sender === "owner" ? "فروشگاه" : "شما") + '</b>' + esc(m.body || "") + photo + '</div>';
+      var hasPhoto = (m.photo_data && String(m.photo_data).indexOf("data:image/") === 0);
+      var photoLabel = (hasPhoto && m.sender !== "owner" && ord && (ord.status === "approved" || ord.status === "paid")) ? '<span class="lbl">اسکرین‌شات رسید پرداخت</span>' : "";
+      var photo = hasPhoto ? '<img alt="عکس پیام" src="' + m.photo_data + '" />' : "";
+      return '<div class="msg-item' + (m.sender === "owner" ? " owner" : "") + '"><b>' + (m.sender === "owner" ? "فروشگاه" : "شما") + '</b>' + esc(m.body || "") + photoLabel + photo + '</div>';
     }).join("") : '<p class="wait-note">هنوز پیامی نیست.</p>';
     document.querySelectorAll('[data-msglist="' + code + '"]').forEach(function(el){ el.innerHTML = html; });
   }

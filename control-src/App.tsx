@@ -505,6 +505,10 @@ function OrderCard({
     .join(" · ");
   const amountValue = order.final_amount_toman ?? order.total_toman;
   const detailsId = `order-${order.id}`;
+  const paymentPhotos = messages.filter(
+    (m) => m.sender !== "owner" && m.photo_data && m.photo_data.startsWith("data:image/"),
+  );
+  const latestPaymentPhoto = paymentPhotos.length > 0 ? paymentPhotos[paymentPhotos.length - 1] : null;
   return (
     <article className="glass overflow-hidden rounded-3xl">
       <button
@@ -565,7 +569,22 @@ function OrderCard({
             <p className="mt-1 text-xs text-[var(--dim)]">توضیحات مشتری: {order.note}</p>
           ) : null}
           <div className="mt-3 border-t border-[var(--border)] pt-3">
-            <h3 className="text-xs font-black text-[var(--text)]">پیام‌های مشتری</h3>
+            <h3 className="text-xs font-black text-[var(--text)]">پیام‌ها و رسید پرداخت</h3>
+            {order.status === "approved" ? (
+              <div className="mt-2 rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+                <b className="block text-xs text-[var(--dim)]">رسید پرداخت مشتری</b>
+                {latestPaymentPhoto ? (
+                  <>
+                    <p className="mt-1">آخرین اسکرین‌شات رسید پرداخت · {fmtTime(latestPaymentPhoto.created_at)}</p>
+                    {latestPaymentPhoto.body ? <p className="mt-1">{latestPaymentPhoto.body}</p> : null}
+                    <img src={latestPaymentPhoto.photo_data as string} alt="اسکرین‌شات رسید پرداخت مشتری" className="mt-2 max-w-full rounded-xl" />
+                  </>
+                ) : (
+                  <p className="mt-1 text-xs text-[var(--dim)]">هنوز اسکرین‌شات رسید پرداختی ارسال نشده است.</p>
+                )}
+                <p className="mt-2 text-xs text-[var(--dim)]">تایید پرداخت فقط بعد از دیده‌شدن واریز در حساب بانکی باشد؛ اسکرین‌شات به‌تنهایی کافی نیست.</p>
+              </div>
+            ) : null}
             <div className="mt-2 flex flex-col gap-2">
               {messages.length === 0 ? (
                 <p className="text-xs text-[var(--dim)]">هنوز پیامی نیست.</p>
@@ -574,7 +593,12 @@ function OrderCard({
                   <b className="block text-xs text-[var(--dim)]">{m.sender === "owner" ? "فروشگاه" : "مشتری"} · {fmtTime(m.created_at)}</b>
                   {m.body ? <p className="mt-1">{m.body}</p> : null}
                   {m.photo_data && m.photo_data.startsWith("data:image/") ? (
-                    <img src={m.photo_data} alt="عکس پیام مشتری" className="mt-2 max-w-full rounded-xl" />
+                    <>
+                      {m.sender !== "owner" && (order.status === "approved" || order.status === "payment_confirmed") ? (
+                        <b className="mt-2 block text-xs text-[var(--dim)]">اسکرین‌شات رسید پرداخت</b>
+                      ) : null}
+                      <img src={m.photo_data} alt="عکس پیام مشتری" className="mt-2 max-w-full rounded-xl" />
+                    </>
                   ) : null}
                 </div>
               ))}
@@ -629,6 +653,9 @@ function OrderCard({
               </div>
             </div>
           </div>
+          {order.status === "approved" ? (
+            <p className="mt-3 text-xs text-[var(--dim)]">قبل از «پرداخت تایید شد»، واریز را در حساب بانکی چک کن؛ تایید بر اساس واریز بانکی است، نه فقط اسکرین‌شات.</p>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"

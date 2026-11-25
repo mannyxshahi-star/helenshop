@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>کنترل HelenShop</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar">
+      <div class="brand">کنترل HelenShop<small>مدیریت زنده‌ی فروشگاه</small></div>
+      <button class="pillbtn hidden" id="logoutBtn" type="button">خروج</button>
+    </header>
+
+    <div id="modeNotice"></div>
+
+    <section class="card" id="loginCard">
+      <h2>ورود مالک</h2>
+      <p class="muted">نام کاربری و رمز عبور را وارد کنید. بررسی واقعی در Supabase Auth و RLS انجام می‌شود؛ این صفحه به‌تنهایی مجوز نمی‌سازد.</p>
+      <div class="field"><label for="username">نام کاربری</label><input id="username" autocomplete="username"></div>
+      <div class="field"><label for="password">رمز عبور</label><input id="password" type="password" autocomplete="current-password"></div>
+      <div id="loginMessage"></div>
+      <button class="btn primary" id="loginBtn" type="button" style="width:100%">ورود</button>
+    </section>
+
+    <section id="panel" class="hidden">
+      <section class="card">
+        <h2>اسکن QR فاکتور</h2>
+        <p class="small">QR فاکتور مشتری را اسکن کنید تا سفارش همان‌جا باز شود. توکن فقط در مرورگر خوانده و برای بررسی به Supabase فرستاده می‌شود؛ به هیچ سرویس QR بیرونی نمی‌رود.</p>
+        <video id="qrVideo" playsinline muted style="width:100%;max-height:320px;border-radius:16px;background:#000;display:none"></video>
+        <canvas id="qrCanvas" class="hidden"></canvas>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" id="startScan" type="button">شروع اسکن با دوربین</button>
+          <button class="btn hidden" id="stopScan" type="button">توقف اسکن</button>
+        </div>
+        <div class="field"><label for="manualQr">یا لینک/توکن QR را بچسبانید</label><input id="manualQr" autocomplete="off" placeholder="لینک پیگیری یا توکن"></div>
+        <button class="btn" id="manualQrBtn" type="button">بررسی QR</button>
+        <div id="scanMessage"></div>
+        <div id="scannedOrder" style="margin-top:12px"></div>
+      </section>
+
+      <section class="card" style="margin-top:14px">
+        <div class="row between"><h2>محصولات</h2><button class="btn" id="refreshBtn" type="button">تازه‌سازی</button></div>
+        <p class="small">قیمت خالی یعنی قیمت نمایش داده نمی‌شود. موجودی خالی یعنی تعداد محدود نشده است؛ صفر یعنی ناموجود.</p>
+        <div id="productEditor"></div>
+      </section>
+
+      <section class="card" style="margin-top:14px">
+        <h2>شماره کارت پیش‌فرض</h2>
+        <div class="row">
+          <input id="cardNumber" placeholder="شماره کارت" autocomplete="off" style="flex:1;min-width:220px">
+          <button class="btn primary" id="saveCard" type="button">ذخیره</button>
+        </div>
+        <div id="settingsMessage"></div>
+      </section>
+
+      <section class="card" style="margin-top:14px">
+        <div class="row between"><h2>سفارش‌ها</h2><select id="statusFilter" style="width:auto"><option value="">همه</option><option value="pending">در انتظار</option><option value="approved">تاییدشده</option><option value="payment_confirmed">پرداخت تایید شد</option><option value="rejected">ردشده</option></select></div>
+        <div id="orders"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/data.js"></script>
+  <script src="assets/jsQR.js"></script>
+  <script src="assets/control.js"></script>
+</body>
+</html>

@@ -824,12 +824,14 @@ function ProductRow({
         </div>
         <div>
           <label htmlFor={`stock-${product.id}`} className={LABEL_CLASS}>
-            موجودی<span className={HINT_CLASS}> — خالی یعنی نامحدود</span>
+            موجودی (کیلوگرم)<span className={HINT_CLASS}> — خالی یعنی نامحدود</span>
           </label>
           <div className="mt-2">
             <input
               id={`stock-${product.id}`}
               inputMode="decimal"
+              step="0.5"
+              min="0"
               value={stock}
               onChange={(e) => setStock(e.target.value)}
               className={FIELD_LTR_CLASS}

@@ -92,7 +92,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists (
     select 1 from public.profiles
@@ -110,7 +110,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select count(*) >= 10
   from public.order_lookup_attempts
@@ -123,7 +123,7 @@ create or replace function public.record_lookup(p_code text, p_success boolean)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   insert into public.order_lookup_attempts(code, success)
   values (upper(coalesce(p_code, '')), coalesce(p_success, false));
@@ -134,7 +134,7 @@ returns text
 language plpgsql
 volatile
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   b bytea := gen_random_bytes(4);
@@ -170,7 +170,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   item jsonb;
@@ -244,7 +244,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   ord public.orders%rowtype;
@@ -278,7 +278,7 @@ create or replace function public.owner_get_order_by_token(p_code text, p_token 
 returns setof public.orders
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   clean_code text := upper(coalesce(p_code, ''));

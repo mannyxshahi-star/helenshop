@@ -258,7 +258,7 @@ begin
   if public.lookup_rate_limited(clean_code) then
     return;
   end if;
-  select * into ord from public.orders where code = clean_code;
+  select * into ord from public.orders o where o.code = clean_code;
   if found then
     token_ok := coalesce(p_token, '') <> '' and ord.token_hash = encode(digest(p_token, 'sha256'), 'hex');
     phone_ok := public.normalize_phone(p_phone) <> '' and public.normalize_phone(ord.customer_phone) = public.normalize_phone(p_phone);

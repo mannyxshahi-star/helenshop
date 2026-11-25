@@ -814,7 +814,7 @@
     if(p.variants){
       var v = p.variants[0];
       p.variants.forEach(function(x){ if(x.id === parts[1]) v = x; });
-      return { key:p.id + ":" + v.id, pid:p.id, name:p.name + " " + v.name, img:p.img, alt:p.alt, cat:p.cat, kg:true, price:v.price, unit:"کیلویی" };
+      return { key:p.id + ":" + v.id, pid:p.id, name:p.name + " " + v.name, img:p.img, alt:p.alt, cat:p.cat, kg:true, price:v.price, stock:(typeof p.stock === "number" ? p.stock : null), available:p.available !== false, unit:"کیلویی" };
     }
     return { key:p.id, pid:p.id, name:p.name, img:p.img, alt:p.alt, cat:p.cat, kg:!!p.kg, price:(typeof p.price === "number" ? p.price : null), stock:(typeof p.stock === "number" ? p.stock : null), available:p.available !== false, unit:p.unit };
   }
@@ -894,12 +894,13 @@
     var visible = 0;
     PRODUCTS.forEach(function(p){
       if(filter !== "all" && p.cat !== filter) return;
-      if(p.available === false) return;
       if(query && (p.name + " " + p.desc).indexOf(query) === -1) return;
       visible++;
+      var out = p.available === false;
       var key = cardKey(p);
       var line = lineOf(key);
-      var q = cartQty(key);
+      var q = out ? 0 : cartQty(key);
+      var stockHtml = out ? '<span class="unit">عدم موجودی</span>' : '';
       var priceHtml = "";
       if(p.variants){
         var v = null;
@@ -918,7 +919,7 @@
       var phHtml = '<div class="ph"><img src="' + p.img + '" alt="' + p.alt + '" loading="lazy" />'
         + '<span class="cat-tag">' + CATS[p.cat] + '</span>'
         + '<span class="in-cart' + (q > 0 ? " show" : "") + '" data-incart="' + key + '">' + (line.kg ? faNum(q) + ' کیلو در سبد' : faNum(q) + ' عدد در سبد') + '</span></div>';
-      var qtyRowHtml = '<div class="qty-row' + (q > 0 ? " show" : "") + '" data-qtyrow="' + key + '">'
+      var qtyRowHtml = out ? '' : '<div class="qty-row' + (q > 0 ? " show" : "") + '" data-qtyrow="' + key + '">'
         + '<button type="button" data-dec="' + key + '" aria-label="کم کردن">−</button>'
         + '<span class="n">' + faNum(q) + ' <small>' + (line.kg ? 'کیلو' : 'عدد') + '</small></span>'
         + '<button type="button" data-inc="' + key + '" aria-label="زیاد کردن">+</button></div>';
@@ -932,7 +933,8 @@
           + '<div class="body"><h3>' + p.name + '</h3>'
           + '<p class="desc">' + p.desc + '</p>'
           + '<span class="unit">' + p.unit + (p.kg ? ' · کیلویی' : '') + '</span>'
-          + '<button class="add-btn" type="button" data-flip-open="' + p.id + '"' + (q > 0 ? ' style="display:none"' : "") + '>' + cartSvg + 'افزودن به سبد</button>'
+          + stockHtml
+          + (out ? '<button class="add-btn" type="button" disabled>عدم موجودی</button>' : '<button class="add-btn" type="button" data-flip-open="' + p.id + '"' + (q > 0 ? ' style="display:none"' : "") + '>' + cartSvg + 'افزودن به سبد</button>')
           + qtyRowHtml
           + '</div></div>'
           + '<div class="face back">'
@@ -940,12 +942,12 @@
           + priceHtml
           + (p.variants ? '' : '<p class="back-note">مقدار را بر حسب ' + (p.kg ? 'کیلوگرم' : 'عدد') + ' انتخاب کن، بعد به سبد اضافه کن.</p>')
           + '<div class="qty-row show back-qty">'
-          + '<button type="button" data-bdec="' + p.id + '" aria-label="کم کردن مقدار">−</button>'
+          + '<button type="button" data-bdec="' + p.id + '" aria-label="کم کردن مقدار"' + (out ? ' disabled' : '') + '>−</button>'
           + '<span class="n" id="bq-' + p.id + '">' + faNum(pend) + ' <small>' + (p.kg ? 'کیلو' : 'عدد') + '</small></span>'
-          + '<button type="button" data-binc="' + p.id + '" aria-label="زیاد کردن مقدار">+</button></div>'
+          + '<button type="button" data-binc="' + p.id + '" aria-label="زیاد کردن مقدار"' + (out ? ' disabled' : '') + '>+</button></div>'
           + '<div class="back-sp"></div>'
           + backTotal
-          + '<button class="add-btn" type="button" data-confirm="' + p.id + '">' + cartSvg + 'افزودن به سبد</button>'
+          + (out ? '<button class="add-btn" type="button" disabled>عدم موجودی</button>' : '<button class="add-btn" type="button" data-confirm="' + p.id + '">' + cartSvg + 'افزودن به سبد</button>')
           + '</div>'
           + '</div></article>';
       } else {
@@ -955,9 +957,10 @@
           + '<p class="desc">' + p.desc + '</p>'
           + priceHtml
           + '<span class="unit">' + p.unit + (p.kg ? ' · کیلویی' : '') + '</span>'
-          + '<button class="add-btn" type="button" data-add="' + key + '" ' + (q > 0 ? 'style="display:none"' : "") + '>'
+          + stockHtml
+          + (out ? '<button class="add-btn" type="button" disabled>عدم موجودی</button>' : '<button class="add-btn" type="button" data-add="' + key + '" ' + (q > 0 ? 'style="display:none"' : "") + '>'
           + cartSvg
-          + 'افزودن به سبد</button>'
+          + 'افزودن به سبد</button>')
           + qtyRowHtml
           + '</div></article>';
       }
@@ -1021,6 +1024,7 @@
 
   function setQty(key, q){
     var line = lineOf(key);
+    if(q > 0 && line && line.available === false){ delete cart[key]; toast("عدم موجودی"); renderCart(); return; }
     if(line && line.kg) q = Math.round(q * 2) / 2;
     if(line && typeof line.stock === "number") q = Math.min(q, line.stock);
     if(q <= 0){ delete cart[key]; } else { cart[key] = q; }
@@ -1117,6 +1121,8 @@
     var fo = e.target.closest("[data-flip-open]");
     if(fo){
       var fpid = fo.getAttribute("data-flip-open");
+      var fp = productById(fpid);
+      if(fp && fp.available === false){ toast("عدم موجودی"); return; }
       flipOpen[fpid] = true;
       var fcard = fo.closest(".card");
       if(fcard) fcard.classList.add("flipped");
@@ -1140,6 +1146,7 @@
     var bi = e.target.closest("[data-binc]");
     if(bi){
       var bp1 = productById(bi.getAttribute("data-binc"));
+      if(bp1 && bp1.available === false){ toast("عدم موجودی"); return; }
       if(bp1){ pendQty[bp1.id] = pendOf(bp1) + (bp1.kg ? 0.5 : 1); updateBack(bp1.id); }
       return;
     }
@@ -1153,6 +1160,7 @@
     if(cf){
       var cpid = cf.getAttribute("data-confirm");
       var cp = productById(cpid);
+      if(cp && cp.available === false){ toast("عدم موجودی"); return; }
       if(cp){
         var ckey = cardKey(cp);
         var cqty = pendOf(cp);
@@ -1168,6 +1176,8 @@
     var add = e.target.closest("[data-add]");
     if(add){
       var addId = add.getAttribute("data-add");
+      var addLine = lineOf(addId);
+      if(addLine && addLine.available === false){ toast("عدم موجودی"); return; }
       var card = add.closest(".card");
       var cardImg = card ? card.querySelector(".ph img") : null;
       flyToCart(cardImg, function(){ bumpCart(); toast("به سبد خرید اضافه شد"); });
@@ -1336,8 +1346,14 @@
         p.price = (r.price_toman == null ? null : Number(r.price_toman));
         p.stock = (r.stock_quantity == null ? null : Number(r.stock_quantity));
         p.available = hsData.productSellable(r);
+        if(p.available === false){
+          Object.keys(cart).forEach(function(key){
+            var line = lineOf(key);
+            if(line && line.pid === p.id) delete cart[key];
+          });
+        }
       });
-      renderProducts();
+      renderCart();
     }).catch(function(){});
   }
   function hsQrSvg(text){
@@ -1389,6 +1405,7 @@
   function submitOrder(){
     var items = orderLines();
     if(!items.length) return;
+    if(items.some(function(it){ return it.line.available === false; })){ toast("عدم موجودی"); return; }
     if(!hsData){ toast("اتصال فروشگاه آماده نیست"); return; }
     var btn = byId("coSubmit");
     btn.disabled = true;

@@ -134,7 +134,21 @@
     }
     async function request(path, init) {
       if (!fetchImpl) throw new Error("FETCH_UNAVAILABLE");
-      const res = await fetchImpl(base + path, init);
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
+      let res;
+      try {
+        res = await fetchImpl(base + path, controller ? { ...(init || {}), signal: controller.signal } : init);
+      } catch (e) {
+        if (timer) clearTimeout(timer);
+        if (e && e.name === "AbortError") {
+          const err = new Error("TIMEOUT");
+          err.code = "TIMEOUT";
+          throw err;
+        }
+        throw e;
+      }
+      if (timer) clearTimeout(timer);
       const text = await res.text();
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch { data = text; }

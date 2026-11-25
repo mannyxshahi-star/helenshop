@@ -1647,6 +1647,15 @@ export function App() {
     }
   }, [authed, shop.data]);
 
+  useEffect(() => {
+    const err = shop.error as { status?: number } | null;
+    if (authed && err && err.status === 401) {
+      void data.logout();
+      setAuthed(false);
+      setLoginError("نشست منقضی شده؛ دوباره وارد شو.");
+    }
+  }, [authed, shop.error]);
+
   const doLogin = async () => {
     setLoginError(null);
     try {
@@ -1670,22 +1679,26 @@ export function App() {
     <div
       dir="rtl"
       lang="fa"
-      className="min-h-screen [background:var(--page-grad)]"
+      className="min-h-screen overflow-x-clip [background:var(--page-grad)]"
     >
       <SafeAreaTopScrim backgroundColor="transparent" />
 
       <main className="mx-auto w-full max-w-3xl px-3 pb-6 pt-3 sm:px-4 sm:pt-4">
         {/* Header — a floating Liquid Glass bar */}
-        <div className="glass-deep flex items-center justify-between gap-3 rounded-full py-2 pl-2 pr-5">
-          <div className="min-w-0">
+        <div className="glass-deep flex max-w-full items-center justify-between gap-3 overflow-hidden rounded-full py-2 pl-2 pr-5">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-black text-[var(--text)]">
               پنل کنترل سایت
             </h1>
             <p className="tnum mt-0.5 truncate text-xs text-[var(--dim)]">
               {authed
-                ? updatedAt
-                  ? `آخرین سفارش: ${fmtTime(updatedAt)}`
-                  : "در حال اتصال به فروشگاه…"
+                ? shop.isError
+                  ? "اتصال ناموفق بود"
+                  : updatedAt
+                    ? `آخرین سفارش: ${fmtTime(updatedAt)}`
+                    : shop.isPending
+                      ? "در حال اتصال به فروشگاه…"
+                      : "متصل به فروشگاه"
                 : "ورود مالک"}
             </p>
           </div>
@@ -1761,7 +1774,7 @@ export function App() {
           </div>
         ) : shop.isError || !shopData ? (
           <div className="py-10 text-center">
-            <p className="text-sm text-[var(--danger)]">دریافت اطلاعات فروشگاه ناموفق بود.</p>
+            <p className="text-sm text-[var(--danger)]">دریافت اطلاعات فروشگاه ناموفق بود. اتصال اینترنت را بررسی کن و دوباره تلاش کن.</p>
             <button
               type="button"
               aria-label="تلاش دوباره برای دریافت اطلاعات فروشگاه"

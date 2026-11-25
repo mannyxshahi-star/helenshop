@@ -870,13 +870,19 @@ function ProductRow({
         <button
           type="button"
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            const toEn = (v: string) =>
+              v
+                .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+                .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+            const priceDigits = toEn(price).replace(/[^0-9]/g, "");
+            const stockRaw = toEn(stock).replace(/[^0-9.]/g, "");
             onSave(product.id, {
-              price_toman: price.trim() === "" ? null : Number(price.replace(/[^0-9]/g, "")),
-              stock_quantity: stock.trim() === "" ? null : Number(stock.replace(/[^0-9.]/g, "")),
+              price_toman: price.trim() === "" ? null : Number(priceDigits),
+              stock_quantity: stock.trim() === "" ? null : Number(stockRaw),
               is_available: available,
-            })
-          }
+            });
+          }}
           className={BTN_PRIMARY_CLASS}
           style={BTN_PRIMARY_STYLE}
         >

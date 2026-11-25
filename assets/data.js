@@ -321,6 +321,10 @@
         is_available: Boolean(patch.is_available),
         updated_at: nowIso()
       };
+      if ((clean.price_toman !== null && (!Number.isFinite(clean.price_toman) || clean.price_toman < 0)) ||
+          (clean.stock_quantity !== null && (!Number.isFinite(clean.stock_quantity) || clean.stock_quantity < 0))) {
+        throw new Error("INVALID_PRODUCT_PATCH");
+      }
       if (mode === "demo") {
         const products = demoProducts().map((p) => p.id === id ? normalizeProduct({ ...p, ...clean }) : p);
         demoWrite("helenshop_demo_products", products);
@@ -331,7 +335,9 @@
         headers: headers(s.access_token, { Prefer: "return=representation" }),
         body: JSON.stringify(clean)
       });
-      return Array.isArray(rows) ? rows[0] : rows;
+      const updated = Array.isArray(rows) ? rows[0] : rows;
+      if (!updated) throw new Error("PRODUCT_UPDATE_FAILED");
+      return updated;
     }
 
     async function updateOrder(id, patch) {

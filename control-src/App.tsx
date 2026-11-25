@@ -42,6 +42,7 @@ type Order = {
   created_at: string;
 };
 type ShopData = { products: Product[]; orders: Order[]; settings: { card_number: string } };
+type OrderMessage = { id: string; order_id: string; order_code: string; sender: string; body: string; photo_data: string | null; created_at: string };
 
 declare global {
   interface Window {
@@ -59,6 +60,8 @@ declare global {
         updateOrder: (id: string, patch: Record<string, unknown>) => Promise<unknown>;
         saveSettings: (s: { card_number: string }) => Promise<{ card_number: string }>;
         ownerValidateQr: (text: string) => Promise<Order>;
+        listOrderMessages: (orderId: string) => Promise<OrderMessage[]>;
+        ownerSendOrderMessage: (orderId: string, body: string, photoData?: string | null) => Promise<OrderMessage>;
         productSellable: (p: Product) => boolean;
       };
     };
@@ -471,6 +474,31 @@ function OrderCard({
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [card, setCard] = useState("");
+  const [messages, setMessages] = useState<OrderMessage[]>([]);
+  const [reply, setReply] = useState("");
+  const [msgBusy, setMsgBusy] = useState(false);
+  const [msgError, setMsgError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    data.listOrderMessages(order.id).then((list) => { if (alive) setMessages(list || []); }).catch(() => { if (alive) setMsgError("پیام‌ها بارگذاری نشد."); });
+    return () => { alive = false; };
+  }, [open, order.id]);
+  const sendReply = async () => {
+    const body = reply.trim();
+    if (!body) return;
+    setMsgBusy(true);
+    setMsgError(null);
+    try {
+      const msg = await data.ownerSendOrderMessage(order.id, body, null);
+      setMessages((prev) => [...prev, msg]);
+      setReply("");
+    } catch {
+      setMsgError("پاسخ ارسال نشد.");
+    } finally {
+      setMsgBusy(false);
+    }
+  };
   const statusLabel = STATUS_LABEL[order.status] ?? order.status;
   const itemsText = (order.items || [])
     .map((i) => `${i.name} — ${faQty(i.quantity)} کیلوگرم`)
@@ -536,6 +564,39 @@ function OrderCard({
           {order.note ? (
             <p className="mt-1 text-xs text-[var(--dim)]">توضیحات مشتری: {order.note}</p>
           ) : null}
+          <div className="mt-3 border-t border-[var(--border)] pt-3">
+            <h3 className="text-xs font-black text-[var(--text)]">پیام‌های مشتری</h3>
+            <div className="mt-2 flex flex-col gap-2">
+              {messages.length === 0 ? (
+                <p className="text-xs text-[var(--dim)]">هنوز پیامی نیست.</p>
+              ) : messages.map((m) => (
+                <div key={m.id} className="rounded-2xl bg-[var(--surface-alt)] p-2.5 text-sm text-[var(--text)]">
+                  <b className="block text-xs text-[var(--dim)]">{m.sender === "owner" ? "فروشگاه" : "مشتری"} · {fmtTime(m.created_at)}</b>
+                  {m.body ? <p className="mt-1">{m.body}</p> : null}
+                  {m.photo_data && m.photo_data.startsWith("data:image/") ? (
+                    <img src={m.photo_data} alt="عکس پیام مشتری" className="mt-2 max-w-full rounded-xl" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            {msgError ? <p className="mt-2 text-xs text-[var(--danger)]">{msgError}</p> : null}
+            <label htmlFor={`reply-${order.id}`} className={LABEL_CLASS}>
+              پاسخ به مشتری
+            </label>
+            <div className="mt-2">
+              <textarea
+                id={`reply-${order.id}`}
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                rows={2}
+                className={FIELD_LTR_CLASS}
+                placeholder="پاسخت را بنویس…"
+              />
+            </div>
+            <button type="button" disabled={msgBusy || reply.trim() === ""} onClick={sendReply} className={`${BTN_PRIMARY_CLASS} mt-2`} style={BTN_PRIMARY_STYLE}>
+              ارسال پاسخ
+            </button>
+          </div>
           <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
             <div>
               <label htmlFor={`amt-${order.id}`} className={LABEL_CLASS}>

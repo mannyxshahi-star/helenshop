@@ -475,6 +475,7 @@
   .track-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
   .track-row input{flex:1 1 170px;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14.5px;padding:10px 12px;outline:none;min-height:44px}
   .track-row input:focus{border-color:var(--blue)}
+.msg-box{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.msg-box h4{margin:0 0 8px;font-size:13.5px}.msg-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.msg-item{background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;padding:9px 11px;font-size:13.5px;line-height:1.9}.msg-item.owner{border-color:var(--ok-border)}.msg-item b{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}.msg-item img{max-width:100%;border-radius:10px;margin-top:6px;display:block}.msg-box textarea{width:100%;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14px;padding:10px 12px;outline:none;resize:vertical}.msg-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}.msg-actions label{cursor:pointer}
   .admin-form .field{margin-bottom:10px}
   .admin-form label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:5px}
   .admin-form input{width:100%;background:var(--input-bg);border:1px solid var(--card-border);border-radius:12px;color:var(--text);font-size:14.5px;padding:10px 12px;outline:none}
@@ -1311,6 +1312,8 @@
   function hsTokenKey(code){ return "helenshop_token_" + code; }
   function hsStoreToken(code, token){ try { if(token) localStorage.setItem(hsTokenKey(code), token); } catch(e){} }
   function hsToken(code){ try { return localStorage.getItem(hsTokenKey(code)) || ""; } catch(e){ return ""; } }
+  function hsStoredOrderCodes(){ try { var v = JSON.parse(localStorage.getItem("helenshop_order_codes") || "[]"); return Array.isArray(v) ? v.filter(function(c){ return /^MS-\d{6}$/.test(c); }) : []; } catch(e){ return []; } }
+  function hsRememberOrder(code){ try { if(!code) return; var codes = hsStoredOrderCodes().filter(function(c){ return c !== code; }); codes.unshift(code); localStorage.setItem("helenshop_order_codes", JSON.stringify(codes.slice(0, 10))); } catch(e){} }
   function hsStatus(s){ return s === "payment_confirmed" ? "paid" : (s || "pending"); }
   function hsToSpaceOrder(resp, spaceItems){
     var items = spaceItems || (resp.items || []).map(function(it){
@@ -1332,6 +1335,7 @@
     };
   }
   function hsUpsertOrder(o){
+    hsRememberOrder(o.code);
     for(var i = 0; i < orders.length; i++){ if(orders[i].code === o.code){ orders[i] = o; return; } }
     orders.unshift(o);
   }
@@ -1445,11 +1449,84 @@
     } else if(o.status === "paid"){
       h += '<div class="paid-ok">پرداخت تایید شد — با کد سفارش، سفارشت را درب محل تحویل بگیر.</div>';
     }
+    h += hsMessageBoxHtml(o);
     return h + '</div>';
+  }
+  function hsMessageBoxHtml(o){
+    return '<div class="msg-box" data-msgbox="' + o.code + '"><h4>پیام به فروشگاه</h4>'
+      + '<div class="msg-list" data-msglist="' + o.code + '"><p class="wait-note">در حال بارگذاری پیام‌ها…</p></div>'
+      + '<textarea data-msgbody rows="2" placeholder="اگر مشکلی در پرداخت بود همین‌جا بنویس…"></textarea>'
+      + '<div class="msg-actions"><label class="btn-ghost btn-sm">افزودن عکس<input type="file" accept="image/*" data-msgphoto hidden /></label>'
+      + '<button class="btn-primary btn-sm" type="button" data-sendmsg="' + o.code + '">ارسال پیام</button></div></div>';
+  }
+  function hsRenderMessages(code, list){
+    var html = (list && list.length) ? list.map(function(m){
+      var photo = (m.photo_data && String(m.photo_data).indexOf("data:image/") === 0) ? '<img alt="عکس پیام" src="' + m.photo_data + '" />' : "";
+      return '<div class="msg-item' + (m.sender === "owner" ? " owner" : "") + '"><b>' + (m.sender === "owner" ? "فروشگاه" : "شما") + '</b>' + esc(m.body || "") + photo + '</div>';
+    }).join("") : '<p class="wait-note">هنوز پیامی نیست.</p>';
+    document.querySelectorAll('[data-msglist="' + code + '"]').forEach(function(el){ el.innerHTML = html; });
+  }
+  function hsLoadMessages(code){
+    if(!hsData || !hsData.getOrderMessages) return;
+    hsData.getOrderMessages({ code: code, token: hsToken(code) }).then(function(list){ hsRenderMessages(code, list); }).catch(function(){ hsRenderMessages(code, []); });
+  }
+  function hsPhotoData(file){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function(){
+        try {
+          var scale = Math.min(1, 1200 / Math.max(img.width, img.height));
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL("image/jpeg", 0.72));
+        } catch(e){ URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error("PHOTO_READ_FAILED")); };
+      img.src = url;
+    });
+  }
+  function hsSendMessage(code, btn){
+    var box = btn.closest("[data-msgbox]");
+    if(!box || !hsData || !hsData.sendOrderMessage) return;
+    var bodyEl = box.querySelector("[data-msgbody]");
+    var fileEl = box.querySelector("[data-msgphoto]");
+    var body = bodyEl ? bodyEl.value.trim() : "";
+    var file = fileEl && fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+    if(!body && !file){ toast("پیام یا عکس را انتخاب کن"); return; }
+    btn.disabled = true;
+    var photoPromise = file ? hsPhotoData(file) : Promise.resolve(null);
+    photoPromise.then(function(photoData){
+      return hsData.sendOrderMessage({ code: code, token: hsToken(code), body: body, photo_data: photoData });
+    }).then(function(){
+      if(bodyEl) bodyEl.value = "";
+      if(fileEl) fileEl.value = "";
+      hsLoadMessages(code);
+      toast("پیامت ارسال شد");
+    }).catch(function(){ toast("ارسال پیام انجام نشد"); }).then(function(){ btn.disabled = false; });
+  }
+  function hsRestoreOrders(){
+    if(!hsData) return;
+    hsStoredOrderCodes().slice(0, 5).forEach(function(code){
+      hsData.getOrderStatus({ code: code, token: hsToken(code) }).then(function(resp){
+        if(!resp) return;
+        var o = hsToSpaceOrder(resp);
+        hsUpsertOrder(o);
+        if(!lastOrder) lastOrder = o;
+        renderOrders();
+        var tc = byId("trackCode");
+        var box = byId("trackResult");
+        if(tc && box && !tc.value){ tc.value = code; box.innerHTML = customerOrderHtml(o); hsLoadMessages(code); }
+      }).catch(function(){});
+    });
   }
   function renderOrders(){
     var mine = byId("myOrders");
     if(mine) mine.innerHTML = orders.map(customerOrderHtml).join("");
+    orders.forEach(function(o){ hsLoadMessages(o.code); });
   }
   byId("trackBtn").addEventListener("click", function(){
     var raw = faDigitsToEn(byId("trackCode").value).replace(/[^0-9]/g, "");
@@ -1463,10 +1540,13 @@
         hsUpsertOrder(o);
         renderOrders();
         box.innerHTML = customerOrderHtml(o);
+        hsLoadMessages(code);
       } else { box.innerHTML = ""; toast("سفارشی با این کد پیدا نشد"); }
     }).catch(function(){ box.innerHTML = ""; toast("سفارشی با این کد پیدا نشد"); });
   });
   document.addEventListener("click", function(e){
+    var sm = e.target.closest("[data-sendmsg]");
+    if(sm){ hsSendMessage(sm.getAttribute("data-sendmsg"), sm); return; }
     var cc = e.target.closest("[data-copycard]");
     if(cc){
       var o3 = orderByCode(cc.getAttribute("data-copycard"));
@@ -1560,7 +1640,8 @@
     var code = (hsParams.get("code") || "").toUpperCase();
     var token = hsParams.get("token") || "";
     if(code && token) hsStoreToken(code, token);
-    if(code){ byId("trackCode").value = code; byId("trackBtn").click(); }
+    if(code){ hsRememberOrder(code); byId("trackCode").value = code; byId("trackBtn").click(); }
+    else hsRestoreOrders();
   })();
 })();
 </script>

@@ -160,6 +160,23 @@
       return products.map(normalizeProduct).sort((a, b) => a.sort_order - b.sort_order);
     }
     function demoOrders() { return demoRead("helenshop_demo_orders", []); }
+    function demoMessages() { return demoRead("helenshop_demo_messages", []); }
+    function demoWriteMessages(list) { demoWrite("helenshop_demo_messages", list); }
+    function cleanMessage(body, photoData) {
+      const cleanBody = String(body || "").slice(0, 2000);
+      const cleanPhoto = photoData ? String(photoData) : null;
+      if (!cleanBody && !cleanPhoto) throw new Error("EMPTY_MESSAGE");
+      if (cleanPhoto && cleanPhoto.length > 2000000) throw new Error("PHOTO_TOO_LARGE");
+      return { body: cleanBody, photo_data: cleanPhoto };
+    }
+    async function demoCustomerOrder(code, token, phone) {
+      if (demoRateLimited(code)) return null;
+      const order = demoOrders().find((o) => o.code === code);
+      const tokenOk = Boolean(order && token && order.token_hash === await sha256Hex(token));
+      const phoneOk = Boolean(order && phone && normalizePhone(order.customer_phone) === phone);
+      if (!order || (!tokenOk && !phoneOk)) { demoRecordFailedLookup(code); return null; }
+      return order;
+    }
     function demoSettings() { return demoRead("helenshop_demo_settings", { card_number: "" }); }
 
     async function getProducts() {
@@ -259,6 +276,71 @@
       return Array.isArray(rows) ? (rows[0] || null) : rows;
     }
     async function getOrderByCode(code, phone) { return getOrderStatus({ code, phone }); }
+    async function getOrderMessages(input) {
+      const code = String((input && input.code) || "").trim().toUpperCase();
+      const token = String((input && input.token) || "");
+      const phone = normalizePhone(input && input.phone);
+      if (!code || (!token && !phone)) return [];
+      if (mode === "setup") return [];
+      if (mode === "demo") {
+        const order = await demoCustomerOrder(code, token, phone);
+        if (!order) return [];
+        return clone(demoMessages().filter((m) => m.order_id === order.id).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))));
+      }
+      const rows = await request("/rest/v1/rpc/get_order_messages", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ p_code: code, p_token: token || null, p_phone: phone || null })
+      });
+      return Array.isArray(rows) ? rows : [];
+    }
+    async function sendOrderMessage(input) {
+      const code = String((input && input.code) || "").trim().toUpperCase();
+      const token = String((input && input.token) || "");
+      const phone = normalizePhone(input && input.phone);
+      const clean = cleanMessage(input && input.body, input && input.photo_data);
+      if (!code || (!token && !phone)) throw new Error("ORDER_ACCESS_REQUIRED");
+      if (mode === "setup") throw new Error("SETUP_REQUIRED");
+      if (mode === "demo") {
+        const order = await demoCustomerOrder(code, token, phone);
+        if (!order) throw new Error("ORDER_NOT_FOUND");
+        const msg = { id: "demo-msg-" + Date.now(), order_id: order.id, order_code: order.code, sender: "customer", body: clean.body, photo_data: clean.photo_data, created_at: nowIso() };
+        const list = demoMessages(); list.push(msg); demoWriteMessages(list);
+        return clone(msg);
+      }
+      const rows = await request("/rest/v1/rpc/send_order_message", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ p_code: code, p_token: token || null, p_phone: phone || null, p_body: clean.body, p_photo_data: clean.photo_data })
+      });
+      const msg = Array.isArray(rows) ? rows[0] : rows;
+      if (!msg) throw new Error("MESSAGE_SEND_FAILED");
+      return msg;
+    }
+    async function listOrderMessages(orderId) {
+      const s = requireSession();
+      if (mode === "demo") return clone(demoMessages().filter((m) => m.order_id === orderId).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))));
+      return request("/rest/v1/order_messages?order_id=eq." + encodeURIComponent(orderId) + "&select=*&order=created_at.asc", { headers: headers(s.access_token) });
+    }
+    async function ownerSendOrderMessage(orderId, body, photoData) {
+      const s = requireSession();
+      const clean = cleanMessage(body, photoData);
+      if (mode === "demo") {
+        const order = demoOrders().find((o) => o.id === orderId);
+        if (!order) throw new Error("ORDER_NOT_FOUND");
+        const msg = { id: "demo-msg-" + Date.now(), order_id: order.id, order_code: order.code, sender: "owner", body: clean.body, photo_data: clean.photo_data, created_at: nowIso() };
+        const list = demoMessages(); list.push(msg); demoWriteMessages(list);
+        return clone(msg);
+      }
+      const rows = await request("/rest/v1/rpc/owner_send_order_message", {
+        method: "POST",
+        headers: headers(s.access_token),
+        body: JSON.stringify({ p_order_id: orderId, p_body: clean.body, p_photo_data: clean.photo_data })
+      });
+      const msg = Array.isArray(rows) ? rows[0] : rows;
+      if (!msg) throw new Error("MESSAGE_SEND_FAILED");
+      return msg;
+    }
     async function ownerValidateQr(payloadText) {
       const s = requireSession();
       const parsed = parseTrackingPayload(payloadText);
@@ -403,6 +485,10 @@
       createOrder,
       getOrderStatus,
       getOrderByCode,
+      getOrderMessages,
+      sendOrderMessage,
+      listOrderMessages,
+      ownerSendOrderMessage,
       ownerValidateQr,
       login,
       logout,

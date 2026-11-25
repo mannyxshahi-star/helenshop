@@ -1478,7 +1478,7 @@
     var notifyBtn = (window.HelenNotify && window.HelenNotify.permission && window.HelenNotify.permission() !== "granted")
       ? '<button class="btn-ghost btn-sm" type="button" data-notifyorder="' + o.code + '">فعال کردن اعلان سفارش</button>'
       : "";
-    var closeBtn = o.status === "approved"
+    var closeBtn = (o.status === "approved" || o.status === "rejected")
       ? '<button class="btn-ghost btn-sm" type="button" data-closeorder="' + o.code + '">بستن</button>'
       : "";
     var h = '<div class="ord" data-ordercard="' + o.code + '"><div class="ord-head"><b dir="ltr">' + o.code + '</b>' + statusChip(o) + notifyBtn + closeBtn + '</div>'

@@ -12,6 +12,11 @@
   let products = [];
   const cart = new Map();
   let trackingToken = params.get("token") || "";
+  const images = window.HELENSHOP_IMAGES || {};
+  const heroImage = document.getElementById("heroImage");
+  const sectionImage = document.getElementById("sectionImage");
+  if (heroImage && images.hero) heroImage.src = images.hero;
+  if (sectionImage && images.yogurt) sectionImage.src = images.yogurt;
 
   const faNum = (n) => Number(n).toLocaleString("fa-IR");
   const money = (n) => n === null || n === undefined ? "قیمت پس از تایید" : faNum(n) + " تومان";
@@ -29,8 +34,10 @@
   }
   function renderCartBar() {
     const count = cartItems().reduce((s, i) => s + i.quantity, 0);
-    cartCountEl.textContent = faNum(count) + " کالا";
-    cartHintEl.textContent = count ? "برای ثبت سفارش ادامه دهید" : "سبد خالی است";
+    cartCountEl.textContent = faNum(count);
+    if (cartHintEl) cartHintEl.textContent = count ? "برای ثبت سفارش ادامه دهید" : "سبد خالی است";
+    const cartNav = document.getElementById("openCart");
+    if (cartNav) cartNav.classList.toggle("active", count > 0);
   }
   function renderProducts() {
     if (!products.length) {
@@ -41,11 +48,15 @@
       const sellable = data.productSellable(p);
       const qty = cart.get(p.id) || 0;
       const stockText = p.stock_quantity === null ? "موجود" : (Number(p.stock_quantity) > 0 ? "موجودی: " + faNum(p.stock_quantity) : "ناموجود");
-      return `<article class="card">
-        <div class="product-visual">${esc(p.name.slice(0, 1))}</div>
+      const image = images[p.id];
+      const visual = image ? `<img class="product-photo" src="${image}" alt="${esc(p.name)}" loading="lazy">` : `<div class="product-visual">${esc(p.name.slice(0, 1))}</div>`;
+      const price = p.price_toman === null || p.price_toman === undefined ? "" : `<div class="price">${money(p.price_toman)} <span class="small">/ ${esc(p.unit_label || "عدد")}</span></div>`;
+      return `<article class="card product-card">
+        ${visual}
         <h3>${esc(p.name)}<span class="badge ${sellable ? "ok" : "off"}">${sellable ? esc(stockText) : "ناموجود"}</span></h3>
         <div class="muted">${esc(p.description || "")}</div>
-        <div class="price">${money(p.price_toman)} <span class="small">/ ${esc(p.unit_label || "عدد")}</span></div>
+        <div class="chiprow smallchips"><span class="chip">${esc(p.unit_label || "عدد")}</span><span class="chip">تحویل درب محل</span></div>
+        ${price}
         <div class="qtyrow"><span class="small">تعداد</span><div class="qty">
           <button type="button" data-dec="${esc(p.id)}" ${sellable ? "" : "disabled"}>−</button><output>${faNum(qty)}</output><button type="button" data-inc="${esc(p.id)}" ${sellable ? "" : "disabled"}>+</button>
         </div></div>
@@ -125,7 +136,13 @@
   document.getElementById("openCart").addEventListener("click", () => { renderCart(); sheet.classList.add("open"); });
   document.getElementById("closeCart").addEventListener("click", () => sheet.classList.remove("open"));
   sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.classList.remove("open"); });
-  document.getElementById("trackBtn").addEventListener("click", () => document.getElementById("trackCode").focus());
+  const trackBtn = document.getElementById("trackBtn");
+  if (trackBtn) trackBtn.addEventListener("click", () => document.getElementById("trackCode").focus());
+  document.querySelectorAll("[data-scroll]").forEach((b) => b.addEventListener("click", () => {
+    const target = document.getElementById(b.dataset.scroll);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.querySelectorAll(".navitem").forEach((n) => n.classList.toggle("active", n === b));
+  }));
   document.getElementById("trackSubmit").addEventListener("click", () => track(document.getElementById("trackCode").value, document.getElementById("trackPhone").value));
   document.getElementById("submitOrder").addEventListener("click", async () => {
     orderMessageEl.innerHTML = "";

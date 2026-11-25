@@ -36,6 +36,18 @@
   function statusText(status) {
     return ({ pending: "در انتظار تایید", approved: "تاییدشده", payment_confirmed: "پرداخت تایید شد", rejected: "ردشده" })[status] || status;
   }
+  function renderStats() {
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = faNum(value); };
+    set("pendingCount", orders.filter((o) => o.status === "pending").length);
+    set("approvedCount", orders.filter((o) => o.status === "approved").length);
+    set("confirmedCount", orders.filter((o) => o.status === "payment_confirmed").length);
+    set("availableCount", products.filter((p) => data.productSellable(p)).length);
+  }
+  function setActiveTab(name) {
+    document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    document.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== name));
+    if (name !== "scan") stopScanner();
+  }
   function renderProducts() {
     productEditor.innerHTML = '<table class="table"><thead><tr><th>محصول</th><th>قیمت تومان</th><th>موجودی</th><th>وضعیت</th><th></th></tr></thead><tbody>' + products.map((p) => `<tr>
       <td><strong>${esc(p.name)}</strong><div class="small">${esc(p.description || "")}</div></td>
@@ -163,7 +175,7 @@
     try {
       [products, orders, settings] = await Promise.all([data.getProducts(), data.listOrders(), data.getSettings()]);
       document.getElementById("cardNumber").value = settings.card_number || "";
-      renderProducts(); renderOrders(); setAuthedUi();
+      renderProducts(); renderOrders(); renderStats(); setAuthedUi();
     } catch {
       await data.logout(); setAuthedUi();
       msg(loginMessage, "نشست معتبر نیست. دوباره وارد شوید.", "err");
@@ -183,6 +195,7 @@
   document.getElementById("startScan").addEventListener("click", startScanner);
   document.getElementById("stopScan").addEventListener("click", stopScanner);
   document.getElementById("manualQrBtn").addEventListener("click", () => validateQrText(document.getElementById("manualQr").value));
+  document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => setActiveTab(b.dataset.tab)));
   document.getElementById("refreshBtn").addEventListener("click", loadAll);
   document.getElementById("statusFilter").addEventListener("change", renderOrders);
   document.getElementById("saveCard").addEventListener("click", async () => {

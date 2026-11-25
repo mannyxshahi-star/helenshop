@@ -5,39 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>HelenShop</title>
-  <link rel="stylesheet" href="assets/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css?v=20261125-space2">
 </head>
-<body>
-  <main class="wrap">
-    <header class="topbar">
-      <div class="brand">HelenShop<small>تحویل درب محل</small></div>
-      <button class="pillbtn" id="trackBtn" type="button">پیگیری سفارش</button>
+<body class="shop">
+  <main class="wrap" id="home">
+    <header class="topbar shop-topbar">
+      <div class="script-logo" aria-label="HelenShop">HelenShop</div>
+      <button class="iconbtn" type="button" data-scroll="support" aria-label="پشتیبانی">☾</button>
     </header>
 
-    <section class="hero">
-      <h1>لبنیات محلی، ساده و تازه</h1>
-      <p>سفارش را ثبت کنید؛ کد سفارش را نگه دارید. پس از تایید، شماره کارت برای پرداخت نمایش داده می‌شود و تحویل فقط درب محل است.</p>
-      <div id="modeNotice"></div>
+    <section class="hero-card">
+      <img id="heroImage" class="hero-bg" alt="">
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <div class="script-logo hero-logo">HelenShop</div>
+        <h1>طعم واقعی محصول محلی،<br>مستقیم سر سفره‌ی شما</h1>
+        <p>لبنیات و فرآورده‌های دامی سنتی — کشک، قارا، روغن حیوانی، ماست، کره و عسل. محصول موردنظرت را به سبد اضافه کن و سفارشت را ثبت کن.</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#products">دیدن محصولات</a>
+          <a class="btn glass" href="#support">پشتیبانی و پرسش‌ها</a>
+        </div>
+        <div class="chiprow">
+          <span class="chip">۶ محصول لبنی و دامی</span>
+          <span class="chip">ثبت سفارش با سبد خرید</span>
+        </div>
+        <div id="modeNotice"></div>
+      </div>
+    </section>
+
+    <section class="section-head" id="productsSection">
+      <div>
+        <h2>لبنی و دامی</h2>
+        <p>کشک، قارا، روغن حیوانی، ماست و کره‌ی محلی</p>
+      </div>
+      <img id="sectionImage" class="section-thumb" alt="">
     </section>
 
     <section id="products" class="grid" aria-live="polite"></section>
 
-    <section class="card" style="margin-top:16px">
-      <h3>پیگیری با کد سفارش</h3>
+    <section class="card support-card" id="support">
+      <h3>پشتیبانی و پیگیری سفارش</h3>
+      <p class="muted">برای پرسش‌ها به <a href="mailto:manny.gharibshahi@protonmail.com">manny.gharibshahi@protonmail.com</a> پیام بده. تحویل فقط درب محل است.</p>
       <div class="row">
         <input id="trackCode" placeholder="MS-123456" autocomplete="off" style="flex:1;min-width:150px">
         <input id="trackPhone" placeholder="شماره تماس سفارش" autocomplete="tel" inputmode="tel" style="flex:1;min-width:160px">
-        <button class="btn" id="trackSubmit" type="button">مشاهده وضعیت</button>
+        <button class="btn primary" id="trackSubmit" type="button">مشاهده وضعیت</button>
       </div>
       <p class="small">برای پیگیری دستی، کد سفارش و شماره تماس لازم است. لینک یا QR فاکتور بدون شماره تماس هم وضعیت را نشان می‌دهد.</p>
+      <button class="pillbtn" id="trackBtn" type="button">پیگیری با کد سفارش</button>
       <div id="trackResult" style="margin-top:12px"></div>
     </section>
   </main>
 
-  <div class="cartbar">
-    <div><strong id="cartCount">۰ کالا</strong><div class="small" id="cartHint">سبد خالی است</div></div>
-    <button class="btn primary" id="openCart" type="button">ثبت سفارش</button>
-  </div>
+  <nav class="bottomnav" aria-label="ناوبری فروشگاه">
+    <button class="navitem active" type="button" data-scroll="home"><span class="navicon">⌂</span><span>خانه</span></button>
+    <button class="navitem" type="button" data-scroll="productsSection"><span class="navicon">▦</span><span>محصولات</span></button>
+    <button class="navitem" type="button" data-scroll="support"><span class="navicon">◉</span><span>پشتیبانی</span></button>
+    <button class="navitem cartnav" id="openCart" type="button"><span class="navicon">🛒</span><span>سبد خرید</span><span class="badge-count" id="cartCount">۰</span><span class="hidden" id="cartHint">سبد خالی است</span></button>
+  </nav>
 
   <div class="sheet" id="cartSheet" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
     <div class="sheetbox">
@@ -48,12 +76,13 @@
       <div class="field"><label for="customerNote">توضیح</label><textarea id="customerNote"></textarea></div>
       <div id="orderMessage"></div>
       <button class="btn primary" id="submitOrder" type="button" style="width:100%">ثبت سفارش و دریافت کد</button>
-      <p class="small">تحویل درب محل. اگر قیمت محصول تنظیم شده باشد همان‌جا دیده می‌شود؛ در غیر این صورت مبلغ نهایی پس از تایید اعلام می‌شود.</p>
+      <p class="small">تحویل درب محل. پس از ثبت، کد سفارش و QR فاکتور نمایش داده می‌شود؛ مبلغ نهایی پس از تایید اعلام می‌شود.</p>
     </div>
   </div>
 
   <script src="assets/config.js"></script>
   <script src="assets/data.js"></script>
+  <script src="assets/product-images.js"></script>
   <script src="assets/qrcodegen.js"></script>
   <script src="assets/app.js"></script>
 </body>
